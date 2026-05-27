@@ -589,3 +589,97 @@ def test_cli_imagen_raises_value_error_exits_3(
     assert result.exit_code == cli_mod.EXIT_INVALID_ARGS
     combined = result.output + (result.stderr or "")
     assert "bad size" in combined
+
+
+# ---------------------------------------------------------------------------
+# 9) Installer subcommands — status / setup --dry-run / uninstall --dry-run
+# ---------------------------------------------------------------------------
+
+
+def test_status_command_runs_without_errors(
+    runner: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """``imagen status`` prints a table and exits 0 without modifying anything."""
+    import codex_imagen._install as _install_mod
+
+    monkeypatch.setattr(_install_mod, "_home", lambda: tmp_path)
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
+
+    result = runner.invoke(cli_mod._status_command, [])
+    assert result.exit_code == 0
+    # Table must contain all five client names.
+    for name in ("Claude Code", "Claude Desktop", "Codex", "Cursor", "OpenCode"):
+        assert name in result.output
+
+
+def test_setup_dry_run_all_reports_plan(
+    runner: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """``imagen setup --dry-run --all`` prints a dry-run plan and exits 0."""
+    import codex_imagen._install as _install_mod
+    import shutil
+
+    monkeypatch.setattr(_install_mod, "_home", lambda: tmp_path)
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+
+    # Make Claude Code appear detected so there's at least one client.
+    (tmp_path / ".claude.json").write_text("{}", encoding="utf-8")
+
+    result = runner.invoke(cli_mod._setup_command, ["--dry-run", "--all"])
+    assert result.exit_code == 0
+    combined = result.output + (result.stderr or "")
+    assert "dry-run" in combined.lower()
+
+
+def test_setup_dry_run_specific_client(
+    runner: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """``imagen setup --dry-run --client claude-code`` works without changes."""
+    import codex_imagen._install as _install_mod
+
+    monkeypatch.setattr(_install_mod, "_home", lambda: tmp_path)
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
+    (tmp_path / ".claude.json").write_text("{}", encoding="utf-8")
+
+    result = runner.invoke(
+        cli_mod._setup_command, ["--dry-run", "--client", "claude-code"]
+    )
+    assert result.exit_code == 0
+    # Config must not have been modified.
+    import json as _json
+    data = _json.loads((tmp_path / ".claude.json").read_text())
+    assert "mcpServers" not in data
+
+
+def test_uninstall_dry_run_all_no_changes(
+    runner: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """``imagen uninstall --dry-run --all`` exits 0 and changes nothing."""
+    import codex_imagen._install as _install_mod
+    import shutil
+
+    monkeypatch.setattr(_install_mod, "_home", lambda: tmp_path)
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+
+    # Install first so there's something installed.
+    import json as _json
+    config = {"mcpServers": {"codex-imagen": {"command": "codex-imagen-mcp"}}}
+    (tmp_path / ".claude.json").write_text(_json.dumps(config), encoding="utf-8")
+
+    result = runner.invoke(cli_mod._uninstall_command, ["--dry-run", "--all"])
+    assert result.exit_code == 0
+    combined = result.output + (result.stderr or "")
+    assert "dry-run" in combined.lower()
+    # Config must be unchanged.
+    data = _json.loads((tmp_path / ".claude.json").read_text())
+    assert "codex-imagen" in data["mcpServers"]

@@ -39,6 +39,12 @@ Exit codes
 
 The flags map 1:1 to :class:`codex_imagen.ImagenOptions` so there is no
 hidden behavior between CLI and SDK.
+
+Subcommands
+-----------
+``imagen setup``     — interactive / batch MCP installer for 5 clients
+``imagen uninstall`` — remove the MCP registration
+``imagen status``    — show detected clients and install state
 """
 
 from __future__ import annotations
@@ -733,3 +739,432 @@ def main() -> None:
 
 if __name__ == "__main__":  # pragma: no cover
     main()
+
+
+# ---------------------------------------------------------------------------
+# Installer subcommands — setup / uninstall / status
+# ---------------------------------------------------------------------------
+# These are wired as a separate Click group so that ``imagen setup`` etc. work
+# as documented. The ``main()`` entry point above continues to use
+# ``_imagen_command`` for backward compatibility. A thin ``imagen_cli`` group
+# is exposed as ``imagen_group`` for the new subcommands; the pyproject.toml
+# console script calls ``main()`` which delegates to ``_imagen_command``.
+#
+# To invoke as top-level subcommands the console script entry is split:
+# the install commands live under ``_install_group`` and are registered on
+# the main group created in ``main_group()``.
+# ---------------------------------------------------------------------------
+
+
+def _is_tty() -> bool:
+    """Return True when stdout is an interactive terminal."""
+    try:
+        return bool(sys.stdout.isatty())
+    except (AttributeError, ValueError):
+        return False
+
+
+def _styled(text: str, **kwargs: Any) -> str:
+    """Apply click.style only when stdout is a TTY."""
+    if _is_tty():
+        return click.style(text, **kwargs)
+    return text
+
+
+def _print_client_table(statuses: list) -> None:  # type: ignore[type-arg]
+    """Print a formatted table of client detection and install status."""
+    from codex_imagen._install import ClientStatus
+
+    header = (
+        f"{'#':<3}  {'Client':<16}  {'Detected':<10}  {'Installed':<10}  Config"
+    )
+    click.echo(header)
+    click.echo("-" * 75)
+    for i, s in enumerate(statuses, start=1):
+        detected_str = _styled("yes", fg="green") if s.detected else _styled("no", fg="red")
+        if s.detected:
+            installed_str = _styled("yes", fg="green") if s.installed else _styled("no", fg="yellow")
+        else:
+            installed_str = "-"
+        config_str = str(s.config_path) if s.config_path else "(not found)"
+        click.echo(f"{i:<3}  {s.name:<16}  {detected_str:<10}  {installed_str:<10}  {config_str}")
+
+
+# ---------------------------------------------------------------------------
+# imagen status
+# ---------------------------------------------------------------------------
+
+@click.command(name="status")
+def _status_command() -> None:
+    """Show detected MCP clients and whether codex-imagen is registered."""
+    from codex_imagen._install import detect_clients
+
+    statuses = detect_clients()
+    click.echo("codex-imagen MCP installer — client status\n")
+    _print_client_table(statuses)
+    click.echo()
+    installed_count = sum(1 for s in statuses if s.installed)
+    detected_count = sum(1 for s in statuses if s.detected)
+    click.echo(
+        f"Detected: {detected_count}/5  |  Installed: {installed_count}/5"
+    )
+
+
+# ---------------------------------------------------------------------------
+# imagen setup
+# ---------------------------------------------------------------------------
+
+@click.command(name="setup")
+@click.option(
+    "--all",
+    "install_all",
+    is_flag=True,
+    default=False,
+    help="Install for all detected clients without prompting.",
+)
+@click.option(
+    "--client",
+    "clients",
+    multiple=True,
+    type=click.Choice(
+        ["claude-code", "claude-desktop", "codex", "cursor", "opencode"]
+    ),
+    help="Install for specific client(s). Repeatable.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Show what would happen without making any changes.",
+)
+def _setup_command(install_all: bool, clients: tuple[str, ...], dry_run: bool) -> None:
+    """Register codex-imagen MCP in one or more AI clients.
+
+    Run without flags for an interactive walkthrough. Use --all to install
+    for every detected client, or --client NAME to target specific clients.
+    """
+    from codex_imagen._install import (
+        ClientStatus,
+        detect_clients,
+        install_for_client,
+        write_codex_preference_snippet,
+    )
+
+    all_statuses = detect_clients()
+
+    if dry_run:
+        click.echo("[dry-run] No files will be modified.\n")
+
+    # Determine which client keys to install.
+    if clients:
+        # Explicit --client flags.
+        target_keys = list(clients)
+    elif install_all:
+        # All detected clients.
+        target_keys = [s.key for s in all_statuses if s.detected]
+        if not target_keys:
+            click.echo("No supported clients detected on this system.")
+            sys.exit(0)
+    else:
+        # Interactive walkthrough.
+        click.echo("codex-imagen MCP installer\n")
+        _print_client_table(all_statuses)
+        click.echo()
+
+        detected_keys = [s.key for s in all_statuses if s.detected]
+        if not detected_keys:
+            click.echo("No supported clients detected. Nothing to install.")
+            sys.exit(0)
+
+        click.echo(
+            "Install for which clients? (comma-separated numbers, 'a' for all detected, 'q' to quit):"
+        )
+        for i, s in enumerate(all_statuses, start=1):
+            if s.detected:
+                click.echo(f"  {i}  {s.name}")
+
+        raw = click.prompt("Selection", default="a")
+        if raw.strip().lower() == "q":
+            click.echo("Aborted.")
+            sys.exit(0)
+
+        if raw.strip().lower() == "a":
+            target_keys = detected_keys
+        else:
+            # Parse comma-separated numbers.
+            target_keys = []
+            for part in raw.split(","):
+                part = part.strip()
+                if not part.isdigit():
+                    click.echo(f"  Skipping invalid selection: {part!r}", err=True)
+                    continue
+                idx = int(part) - 1
+                if 0 <= idx < len(all_statuses):
+                    s = all_statuses[idx]
+                    if s.detected:
+                        target_keys.append(s.key)
+                    else:
+                        click.echo(
+                            f"  Skipping {s.name} — not detected on this system.",
+                            err=True,
+                        )
+                else:
+                    click.echo(f"  Number {part} out of range.", err=True)
+
+        if not target_keys:
+            click.echo("No clients selected. Aborted.")
+            sys.exit(0)
+
+        # Confirmation.
+        name_map = {s.key: s.name for s in all_statuses}
+        names = ", ".join(name_map.get(k, k) for k in target_keys)
+        click.echo(f"\nWill install codex-imagen MCP for: {names}")
+        if not click.confirm("Proceed?", default=True):
+            click.echo("Aborted.")
+            sys.exit(0)
+
+    # Execute installs.
+    click.echo()
+    success_count = 0
+    codex_selected = "codex" in target_keys
+    for key in target_keys:
+        ok, msg = install_for_client(key, dry_run=dry_run)
+        prefix = _styled("[OK]", fg="green") if ok else _styled("[FAIL]", fg="red")
+        click.echo(f"  {prefix}  {msg}")
+        if ok:
+            success_count += 1
+
+    # Codex AGENTS.md preference snippet.
+    if codex_selected and not install_all and not clients:
+        # Interactive: ask the user.
+        click.echo()
+        if click.confirm(
+            "Add codex-imagen preference instruction to ~/.codex/AGENTS.md "
+            "(so the AI prefers codex-imagen over the built-in imagegen)?",
+            default=True,
+        ):
+            ok, msg = write_codex_preference_snippet(dry_run=dry_run)
+            prefix = _styled("[OK]", fg="green") if ok else _styled("[FAIL]", fg="red")
+            click.echo(f"  {prefix}  {msg}")
+    elif codex_selected and (install_all or clients):
+        # Non-interactive: always write the snippet.
+        ok, msg = write_codex_preference_snippet(dry_run=dry_run)
+        prefix = _styled("[OK]", fg="green") if ok else _styled("[FAIL]", fg="red")
+        click.echo(f"  {prefix}  {msg}")
+
+    click.echo()
+    if dry_run:
+        click.echo(f"[dry-run complete] Would have installed for {len(target_keys)} client(s).")
+    else:
+        click.echo(
+            f"Done. Installed for {success_count}/{len(target_keys)} client(s)."
+        )
+        if success_count < len(target_keys):
+            sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# imagen uninstall
+# ---------------------------------------------------------------------------
+
+@click.command(name="uninstall")
+@click.option(
+    "--all",
+    "uninstall_all",
+    is_flag=True,
+    default=False,
+    help="Uninstall from all clients without prompting.",
+)
+@click.option(
+    "--client",
+    "clients",
+    multiple=True,
+    type=click.Choice(
+        ["claude-code", "claude-desktop", "codex", "cursor", "opencode"]
+    ),
+    help="Uninstall from specific client(s). Repeatable.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Show what would happen without making any changes.",
+)
+def _uninstall_command(
+    uninstall_all: bool, clients: tuple[str, ...], dry_run: bool
+) -> None:
+    """Remove the codex-imagen MCP registration from AI clients."""
+    from codex_imagen._install import (
+        detect_clients,
+        remove_codex_preference_snippet,
+        uninstall_for_client,
+    )
+
+    all_statuses = detect_clients()
+
+    if dry_run:
+        click.echo("[dry-run] No files will be modified.\n")
+
+    if clients:
+        target_keys = list(clients)
+    elif uninstall_all:
+        target_keys = [s.key for s in all_statuses if s.installed]
+        if not target_keys:
+            click.echo("codex-imagen is not installed in any detected client.")
+            sys.exit(0)
+    else:
+        # Interactive.
+        click.echo("codex-imagen MCP uninstaller\n")
+        _print_client_table(all_statuses)
+        click.echo()
+
+        installed_keys = [s.key for s in all_statuses if s.installed]
+        if not installed_keys:
+            click.echo("codex-imagen is not installed in any detected client.")
+            sys.exit(0)
+
+        click.echo(
+            "Uninstall from which clients? (comma-separated numbers, 'a' for all installed, 'q' to quit):"
+        )
+        for i, s in enumerate(all_statuses, start=1):
+            if s.installed:
+                click.echo(f"  {i}  {s.name}")
+
+        raw = click.prompt("Selection", default="a")
+        if raw.strip().lower() == "q":
+            click.echo("Aborted.")
+            sys.exit(0)
+
+        if raw.strip().lower() == "a":
+            target_keys = installed_keys
+        else:
+            target_keys = []
+            for part in raw.split(","):
+                part = part.strip()
+                if not part.isdigit():
+                    continue
+                idx = int(part) - 1
+                if 0 <= idx < len(all_statuses):
+                    target_keys.append(all_statuses[idx].key)
+
+        if not target_keys:
+            click.echo("No clients selected. Aborted.")
+            sys.exit(0)
+
+        name_map = {s.key: s.name for s in all_statuses}
+        names = ", ".join(name_map.get(k, k) for k in target_keys)
+        click.echo(f"\nWill remove codex-imagen MCP from: {names}")
+        if not click.confirm("Proceed?", default=True):
+            click.echo("Aborted.")
+            sys.exit(0)
+
+    click.echo()
+    success_count = 0
+    codex_selected = "codex" in target_keys
+    for key in target_keys:
+        ok, msg = uninstall_for_client(key, dry_run=dry_run)
+        prefix = _styled("[OK]", fg="green") if ok else _styled("[FAIL]", fg="red")
+        click.echo(f"  {prefix}  {msg}")
+        if ok:
+            success_count += 1
+
+    if codex_selected:
+        ok, msg = remove_codex_preference_snippet(dry_run=dry_run)
+        prefix = _styled("[OK]", fg="green") if ok else _styled("[FAIL]", fg="red")
+        click.echo(f"  {prefix}  {msg}")
+
+    click.echo()
+    if dry_run:
+        click.echo(f"[dry-run complete] Would have uninstalled from {len(target_keys)} client(s).")
+    else:
+        click.echo(
+            f"Done. Removed from {success_count}/{len(target_keys)} client(s)."
+        )
+        if success_count < len(target_keys):
+            sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Top-level group that merges image-generation + installer subcommands
+# ---------------------------------------------------------------------------
+# Strategy: make ``imagen`` a Click group with invoke_without_command=True.
+# When called without a subcommand it falls through to ``_imagen_command``
+# (the generator). Subcommands ``setup``, ``uninstall``, ``status`` are
+# registered explicitly.
+#
+# ``main()`` above remains unchanged and still points to ``_imagen_command``
+# for full backward compatibility when tests import it directly.
+# The *new* console-script entry point is ``main_group()``.
+# ---------------------------------------------------------------------------
+
+@click.group(
+    name="imagen",
+    invoke_without_command=True,
+    context_settings={
+        "help_option_names": ["-h", "--help"],
+        "max_content_width": 100,
+    },
+)
+@click.pass_context
+def _imagen_group(ctx: click.Context) -> None:
+    """imagen — Codex-OAuth image generation toolkit.
+
+    Run without a subcommand to generate images. Subcommands:
+
+    \b
+      setup      Register codex-imagen MCP in your AI clients
+      uninstall  Remove the MCP registration
+      status     Show which clients have codex-imagen installed
+
+    Examples:
+
+    \b
+      imagen "a ceramic mug"          # generate an image
+      imagen setup                    # interactive MCP installer
+      imagen setup --all              # install everywhere without prompts
+      imagen status                   # show client status
+      imagen uninstall --all          # remove everywhere
+    """
+    # When no subcommand was given, we fall through to the generator. This
+    # makes ``imagen "my prompt"`` still work as before.
+    if ctx.invoked_subcommand is None:
+        # Re-invoke with the raw args stripped of the group wrapper.
+        # Click has already consumed the group name; ctx.args holds
+        # the remaining args. We forward to _imagen_command.
+        pass  # The standalone-mode invoke below handles this.
+
+
+_imagen_group.add_command(_setup_command)
+_imagen_group.add_command(_uninstall_command)
+_imagen_group.add_command(_status_command)
+
+
+def main_group() -> None:
+    """Console-script entry point for the top-level ``imagen`` group.
+
+    Supports both image generation (``imagen "prompt" ...``) and installer
+    subcommands (``imagen setup / uninstall / status``).
+
+    When the first argument is not a known subcommand, all arguments are
+    forwarded to the legacy ``_imagen_command`` generator so existing usage
+    continues to work without change.
+    """
+    import sys as _sys
+
+    # Detect if the first non-option argument is a known subcommand.
+    _known_subcommands = {"setup", "uninstall", "status"}
+    args = _sys.argv[1:]
+
+    # Walk the args to find the first positional (non-flag) argument.
+    first_positional: str | None = None
+    for arg in args:
+        if not arg.startswith("-"):
+            first_positional = arg
+            break
+
+    if first_positional in _known_subcommands:
+        # Dispatch to the group (subcommand routing).
+        _imagen_group.main()
+    else:
+        # No subcommand — forward to the legacy generator command.
+        _imagen_command.main()

@@ -17,6 +17,7 @@ dependencies = [
     "Pillow >= 10.0",
     "click >= 8.1",
     "mcp >= 1.0",
+    "tomli-w >= 1.0",
 ]
 
 [project.optional-dependencies]
@@ -26,7 +27,7 @@ dev = [
 ]
 
 [project.scripts]
-imagen = "codex_imagen.cli:main"
+imagen = "codex_imagen.cli:main_group"
 codex-imagen-mcp = "codex_imagen.mcp_server:main"
 
 [tool.hatch.build.targets.wheel]
