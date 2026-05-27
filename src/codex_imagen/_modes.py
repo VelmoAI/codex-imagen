@@ -33,7 +33,7 @@ The five modes (recap)
 
 Role in architecture
 --------------------
-``core.forge()`` → :func:`detect_mode` → :func:`plan` → :func:`execute_plan`
+``core.imagen()`` → :func:`detect_mode` → :func:`plan` → :func:`execute_plan`
 → ``_prompts.build()`` → ``_bridge.generate()`` → (optional)
 ``_chroma.keyout()``.
 

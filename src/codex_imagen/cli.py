@@ -1,6 +1,6 @@
 """codex_imagen.cli — Click-based CLI with dual-mode (human / JSON) output.
 
-This module wires the :func:`codex_imagen.forge` SDK entry point into a
+This module wires the :func:`codex_imagen.imagen` SDK entry point into a
 console script named ``imagen``. It is the single user-facing CLI surface.
 
 Dual-mode design
@@ -10,7 +10,7 @@ The CLI auto-detects whether stdout is a TTY:
 * **TTY** → human-friendly "pretty" output: a one-line status, an indented
   list of generated image paths with sizes, and a summary footer.
 * **Non-TTY** (pipe, redirect, programmatic invocation) → a single JSON
-  object on stdout containing the full :class:`ForgeResult`. No decoration,
+  object on stdout containing the full :class:`ImagenResult`. No decoration,
   no warnings interleaved into stdout — strictly machine-friendly.
 
 Explicit flags override the detection:
@@ -31,13 +31,13 @@ Exit codes
 ----------
 * 0 — success (at least one image generated, partial successes count as OK)
 * 1 — health-check failure (no API call was attempted)
-* 2 — generation failure (``forge()`` returned ``ok=False`` for non-health
+* 2 — generation failure (``imagen()`` returned ``ok=False`` for non-health
   reasons, e.g. every call failed)
 * 3 — invalid CLI arguments (our own validation, e.g. ``--var foo`` with no
   ``=``, malformed ``--prompt-json`` file, no input at all). Click's own
   parameter validation still exits with its default code (2).
 
-The flags map 1:1 to :class:`codex_imagen.ForgeOptions` so there is no
+The flags map 1:1 to :class:`codex_imagen.ImagenOptions` so there is no
 hidden behavior between CLI and SDK.
 """
 
@@ -52,7 +52,7 @@ from typing import Any
 import click
 
 from codex_imagen import __version__, _bridge
-from codex_imagen.core import ForgeResult, forge
+from codex_imagen.core import ImagenResult, imagen
 
 # ---------------------------------------------------------------------------
 # Constants — exit codes are the SPEC contract; centralising them keeps the
@@ -156,7 +156,7 @@ def _load_prompts_file(path: Path) -> list[str]:
 def _load_prompt_json(path: Path) -> Any:
     """Load a JSON prompt file. The content may be a dict or a list.
 
-    A dict is treated by ``forge()`` as a Codex labeled-spec prompt. A list
+    A dict is treated by ``imagen()`` as a Codex labeled-spec prompt. A list
     is treated as a multi-prompt batch (each element may itself be a string
     or a dict).
     """
@@ -185,11 +185,11 @@ def _load_prompt_json(path: Path) -> Any:
     return data
 
 
-def _result_to_json_dict(result: ForgeResult) -> dict[str, Any]:
-    """Convert a ForgeResult dataclass tree into a JSON-friendly dict.
+def _result_to_json_dict(result: ImagenResult) -> dict[str, Any]:
+    """Convert an ImagenResult dataclass tree into a JSON-friendly dict.
 
-    Path objects become absolute strings; nested dataclasses (ForgeImage,
-    ForgeHealth) are unpacked via :func:`dataclasses.asdict`. Tuples are
+    Path objects become absolute strings; nested dataclasses (ImagenImage,
+    ImagenHealth) are unpacked via :func:`dataclasses.asdict`. Tuples are
     converted to lists implicitly by ``asdict`` for the inner dataclasses,
     but the top-level tuples need explicit handling.
     """
@@ -240,7 +240,7 @@ def _format_bytes(n: int) -> str:
     return f"{mb:.1f} MB"
 
 
-def _print_pretty(result: ForgeResult, *, quiet: bool) -> None:
+def _print_pretty(result: ImagenResult, *, quiet: bool) -> None:
     """Print a human-readable summary of ``result`` to stdout.
 
     In ``quiet`` mode we collapse to a single line so this still composes
@@ -365,7 +365,7 @@ def _resolve_prompt(
 
 
 def _emit_result(
-    result: ForgeResult,
+    result: ImagenResult,
     *,
     json_mode: bool,
     quiet: bool,
@@ -594,7 +594,7 @@ def _emit_result(
     help="Run health check and exit (no API call).",
 )
 @click.version_option(__version__, "--version", prog_name="imagen")
-def _forge_command(
+def _imagen_command(
     prompt: str | None,
     file_path: Path | None,
     prompt_json_path: Path | None,
@@ -623,12 +623,12 @@ def _forge_command(
     quiet: bool,
     health_flag: bool,
 ) -> None:
-    """Forge images via the Codex OAuth bridge.
+    """Generate images via the Codex OAuth bridge.
 
     Provide a positional PROMPT, or pass ``-f FILE`` for multi-prompt
     batches, or ``--prompt-json FILE`` for structured Codex labeled-spec
     input. See ``--help`` for the full option surface; the flags map 1:1
-    onto the ``ForgeOptions`` dataclass used by the SDK.
+    onto the ``ImagenOptions`` dataclass used by the SDK.
     """
     # ---- 1) Decide output mode. ----------------------------------------
     # Explicit flags win; otherwise default to JSON when stdout is not a
@@ -675,10 +675,10 @@ def _forge_command(
         click.echo("Run 'imagen --help' for usage.", err=True)
         sys.exit(EXIT_INVALID_ARGS)
 
-    # ---- 5) Build ForgeOptions kwargs and call the SDK. ----------------
+    # ---- 5) Build ImagenOptions kwargs and call the SDK. ----------------
     # We pass only fields that map cleanly; ``references`` and ``skills``
     # are tuples already (from Click's multiple=True).
-    forge_kwargs: dict[str, Any] = {
+    imagen_kwargs: dict[str, Any] = {
         "prompt": resolved_prompt,
         "output_dir": output_dir,
         "mode": mode,
@@ -706,9 +706,9 @@ def _forge_command(
         click.echo("imagen: starting...", err=True)
 
     try:
-        result = forge(**forge_kwargs)
+        result = imagen(**imagen_kwargs)
     except (ValueError, TypeError) as exc:
-        # ForgeOptions raised on a bad value we didn't pre-validate. This
+        # ImagenOptions raised on a bad value we didn't pre-validate. This
         # is rare because most fields are constrained by Click's
         # ``click.Choice`` already, but e.g. an unparseable size still ends
         # up here through core's own validation path.
@@ -722,13 +722,13 @@ def _forge_command(
 def main() -> None:
     """Console-script entry point declared in ``pyproject.toml``.
 
-    Delegates to the Click command. ``_forge_command`` uses ``sys.exit``
+    Delegates to the Click command. ``_imagen_command`` uses ``sys.exit``
     directly for the SPEC-mandated codes (0/1/2). Our own validation
     errors are :class:`_InvalidArgsError`, which Click raises through with
     ``exit_code = 3``. Click's own parser errors (``UsageError``) keep
     their default code 2.
     """
-    _forge_command.main()
+    _imagen_command.main()
 
 
 if __name__ == "__main__":  # pragma: no cover

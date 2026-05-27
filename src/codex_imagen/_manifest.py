@@ -2,7 +2,7 @@
 
 Purpose
 -------
-After every successful bridge call, ``core.forge()`` appends one line to a
+After every successful bridge call, ``core.imagen()`` appends one line to a
 ``manifest.jsonl`` inside the run's output directory. The manifest captures
 *everything* a downstream agent or human needs to reproduce or audit the
 run: the prompts, the resolved mode, references used, bridge IDs, timing,
@@ -19,7 +19,7 @@ Failure policy
 --------------
 Manifest writes are *non-fatal*. If the disk is full or the parent
 directory is read-only, the orchestrator catches :class:`OSError`,
-turns it into a warning on ``ForgeResult.warnings``, and lets the run
+turns it into a warning on ``ImagenResult.warnings``, and lets the run
 finish. We never crash a successful generation because of a logging
 glitch.
 """

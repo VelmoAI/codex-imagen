@@ -9,7 +9,7 @@ Strategy
 * :func:`asyncio.run` is used inline so we don't depend on the
   pytest-asyncio plugin's per-test fixtures (it's available but using
   ``asyncio.run`` keeps these tests dead-simple).
-* :func:`forge` is monkey-patched at the module level in mcp_server so
+* :func:`imagen` is monkey-patched at the module level in mcp_server so
   no real bridge calls happen.
 """
 
@@ -25,10 +25,10 @@ import pytest
 
 from codex_imagen import mcp_server
 from codex_imagen.core import (
-    ForgeHealth,
-    ForgeImage,
-    ForgeOptions,
-    ForgeResult,
+    ImagenHealth,
+    ImagenImage,
+    ImagenOptions,
+    ImagenResult,
     _VALID_BATCH_MODES,
     _VALID_MODES,
     _VALID_OUTPUT_FORMATS,
@@ -45,9 +45,9 @@ def _run(coro: Any) -> Any:
     return asyncio.run(coro)
 
 
-def _make_result(ok: bool = True) -> ForgeResult:
-    """Build a minimal :class:`ForgeResult` with one image for tests."""
-    img = ForgeImage(
+def _make_result(ok: bool = True) -> ImagenResult:
+    """Build a minimal :class:`ImagenResult` with one image for tests."""
+    img = ImagenImage(
         index=0,
         path=Path("./out/img_0.png"),
         bytes=1234,
@@ -61,14 +61,14 @@ def _make_result(ok: bool = True) -> ForgeResult:
         references_used=(),
         raw_png_path=None,
     )
-    return ForgeResult(
+    return ImagenResult(
         ok=ok,
         mode="medium",
         batch_mode="single",
         images=(img,) if ok else (),
         manifest_path=Path("./out/manifest.jsonl") if ok else None,
         elapsed_ms=42,
-        health=ForgeHealth(ok=True, codex_image_gen_available=True),
+        health=ImagenHealth(ok=True, codex_image_gen_available=True),
         error=None if ok else "synthetic failure",
         warnings=(),
     )
@@ -79,11 +79,11 @@ def _make_result(ok: bool = True) -> ForgeResult:
 # ---------------------------------------------------------------------------
 
 
-def test_list_tools_returns_one_tool_named_forge() -> None:
+def test_list_tools_returns_one_tool_named_imagen() -> None:
     tools = _run(mcp_server._list_tools())
     assert isinstance(tools, list)
     assert len(tools) == 1
-    assert tools[0].name == "forge"
+    assert tools[0].name == "imagen"
 
 
 def test_tool_description_contains_mode_guide() -> None:
@@ -100,17 +100,17 @@ def test_tool_description_contains_mode_guide() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_input_schema_has_all_forge_options_fields() -> None:
-    """Every ForgeOptions field must be exposed via the MCP schema.
+def test_input_schema_has_all_imagen_options_fields() -> None:
+    """Every ImagenOptions field must be exposed via the MCP schema.
 
-    This is a drift test: adding a knob to ForgeOptions without exposing
+    This is a drift test: adding a knob to ImagenOptions without exposing
     it here is the kind of silent omission that breaks AI clients in
     confusing ways.
     """
     props = mcp_server.TOOL_INPUT_SCHEMA["properties"]
-    for field in dataclasses.fields(ForgeOptions):
+    for field in dataclasses.fields(ImagenOptions):
         assert field.name in props, (
-            f"ForgeOptions field {field.name!r} missing from MCP input schema"
+            f"ImagenOptions field {field.name!r} missing from MCP input schema"
         )
 
 
@@ -137,23 +137,23 @@ def test_input_schema_each_property_has_description() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_call_tool_invokes_forge_with_args(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_call_tool_invokes_imagen_with_args(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
 
-    def fake_forge(**kwargs: Any) -> ForgeResult:
+    def fake_imagen(**kwargs: Any) -> ImagenResult:
         captured.update(kwargs)
         return _make_result(ok=True)
 
-    monkeypatch.setattr(mcp_server, "forge", fake_forge)
+    monkeypatch.setattr(mcp_server, "imagen", fake_imagen)
 
-    _run(mcp_server._call_tool("forge", {"prompt": "cat", "count": 2}))
+    _run(mcp_server._call_tool("imagen", {"prompt": "cat", "count": 2}))
     assert captured == {"prompt": "cat", "count": 2}
 
 
 def test_call_tool_returns_json_text_content(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(mcp_server, "forge", lambda **kw: _make_result(ok=True))
+    monkeypatch.setattr(mcp_server, "imagen", lambda **kw: _make_result(ok=True))
 
-    out = _run(mcp_server._call_tool("forge", {"prompt": "cat"}))
+    out = _run(mcp_server._call_tool("imagen", {"prompt": "cat"}))
     assert isinstance(out, list)
     assert len(out) == 1
     assert out[0].type == "text"
@@ -170,12 +170,12 @@ def test_call_tool_returns_json_text_content(monkeypatch: pytest.MonkeyPatch) ->
 def test_call_tool_value_error_returns_ok_false_not_raise(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def bad_forge(**kw: Any) -> ForgeResult:
+    def bad_imagen(**kw: Any) -> ImagenResult:
         raise ValueError("bad size")
 
-    monkeypatch.setattr(mcp_server, "forge", bad_forge)
+    monkeypatch.setattr(mcp_server, "imagen", bad_imagen)
 
-    out = _run(mcp_server._call_tool("forge", {"prompt": "cat"}))
+    out = _run(mcp_server._call_tool("imagen", {"prompt": "cat"}))
     parsed = json.loads(out[0].text)
     assert parsed["ok"] is False
     assert parsed["error_type"] == "ValueError"
@@ -185,12 +185,12 @@ def test_call_tool_value_error_returns_ok_false_not_raise(
 def test_call_tool_type_error_returns_ok_false(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def bad_forge(**kw: Any) -> ForgeResult:
+    def bad_imagen(**kw: Any) -> ImagenResult:
         raise TypeError("unexpected keyword argument 'frobnicate'")
 
-    monkeypatch.setattr(mcp_server, "forge", bad_forge)
+    monkeypatch.setattr(mcp_server, "imagen", bad_imagen)
 
-    out = _run(mcp_server._call_tool("forge", {"prompt": "x", "frobnicate": 1}))
+    out = _run(mcp_server._call_tool("imagen", {"prompt": "x", "frobnicate": 1}))
     parsed = json.loads(out[0].text)
     assert parsed["ok"] is False
     assert parsed["error_type"] == "TypeError"
@@ -199,10 +199,10 @@ def test_call_tool_type_error_returns_ok_false(
 def test_call_tool_real_validation_error_surfaces_as_ok_false(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """End-to-end: a real ForgeOptions validation error becomes ok=false."""
-    # Don't monkeypatch — let the real forge() raise from ForgeOptions.
+    """End-to-end: a real ImagenOptions validation error becomes ok=false."""
+    # Don't monkeypatch — let the real imagen() raise from ImagenOptions.
     out = _run(
-        mcp_server._call_tool("forge", {"prompt": "cat", "mode": "bogus"})
+        mcp_server._call_tool("imagen", {"prompt": "cat", "mode": "bogus"})
     )
     parsed = json.loads(out[0].text)
     assert parsed["ok"] is False
@@ -220,9 +220,9 @@ def test_call_tool_non_dict_arguments_returns_ok_false(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Defensive: if the SDK ever hands us non-dict args, don't crash."""
-    # Hit _call_forge_sync directly with a non-dict so we exercise the
+    # Hit _call_imagen_sync directly with a non-dict so we exercise the
     # defensive branch without depending on SDK internals.
-    payload = mcp_server._call_forge_sync("not a dict")  # type: ignore[arg-type]
+    payload = mcp_server._call_imagen_sync("not a dict")  # type: ignore[arg-type]
     parsed = json.loads(payload)
     assert parsed["ok"] is False
     assert parsed["error_type"] == "TypeError"
@@ -238,7 +238,7 @@ def test_result_to_dict_paths_stringified() -> None:
     out = mcp_server._result_to_dict(result)
     assert isinstance(out["manifest_path"], str)
     assert isinstance(out["images"][0]["path"], str)
-    # ForgeImage.raw_png_path was None — must survive as None, not "None".
+    # ImagenImage.raw_png_path was None — must survive as None, not "None".
     assert out["images"][0]["raw_png_path"] is None
 
 

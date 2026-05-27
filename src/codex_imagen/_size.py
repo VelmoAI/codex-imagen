@@ -6,7 +6,7 @@ The Codex OAuth bridge forwards a ``size`` field to ``gpt-image-2``. The
 server-side validator enforces four hard rules and a soft "experimental"
 threshold. Failing the hard rules causes an HTTP 400 *during* generation —
 which is the worst possible time to find out. This module lets the rest
-of forge fail fast (and offer a concrete fix) before a network call ever
+of imagen fail fast (and offer a concrete fix) before a network call ever
 happens.
 
 Verified gpt-image-2 rules (from live probes, see ``probe_validate.py``)
@@ -109,7 +109,7 @@ EXPERIMENTAL_THRESHOLD: tuple[int, int] = (2560, 1440)
 COMMON_SIZES: tuple[str, ...] = (
     "1024x1024",  # square, smallest sensible default
     "1024x1536",  # portrait
-    "1536x1024",  # landscape — forge's "high" preset default
+    "1536x1024",  # landscape — imagen's "high" preset default
     "1024x1792",  # tall portrait
     "1792x1024",  # wide landscape
     "2048x2048",  # large square
@@ -117,7 +117,7 @@ COMMON_SIZES: tuple[str, ...] = (
 
 # Separator regex: accept "x", "X", or "*" with optional whitespace
 # around it. We never accept commas or "by" — those are typo-magnets
-# and clash with the WxH convention everywhere else in forge.
+# and clash with the WxH convention everywhere else in imagen.
 _SEP_RE = re.compile(r"\s*[xX*]\s*")
 
 
@@ -185,7 +185,7 @@ def parse(size: str) -> tuple[int, int]:
     if not stripped:
         raise ValueError("size string is empty")
     if stripped.lower() == "auto":
-        # "auto" is a valid forge-level value but not a parseable
+        # "auto" is a valid imagen-level value but not a parseable
         # WxH — callers in this module handle it separately.
         raise ValueError("'auto' is not a numeric size; handle it before calling parse()")
 

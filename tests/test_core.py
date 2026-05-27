@@ -1,4 +1,4 @@
-"""Tests for codex_imagen.core.forge() and ForgeOptions.
+"""Tests for codex_imagen.core.imagen() and ImagenOptions.
 
 All tests monkeypatch the bridge layer; nothing here calls a real API.
 The strategy:
@@ -26,7 +26,7 @@ from typing import Any
 import pytest
 
 from codex_imagen import core
-from codex_imagen.core import ForgeImage, ForgeOptions, ForgeResult, forge
+from codex_imagen.core import ImagenImage, ImagenOptions, ImagenResult, imagen
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +125,7 @@ def healthy_bridge(monkeypatch: pytest.MonkeyPatch) -> FakeBridge:
 # ---------------------------------------------------------------------------
 
 
-def test_forge_returns_health_failure_without_api_call(
+def test_imagen_returns_health_failure_without_api_call(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -135,7 +135,7 @@ def test_forge_returns_health_failure_without_api_call(
     fb = FakeBridge()
     monkeypatch.setattr(core._bridge, "generate", fb)
 
-    result = forge(prompt="hello", output_dir=tmp_path)
+    result = imagen(prompt="hello", output_dir=tmp_path)
 
     assert result.ok is False
     assert result.error == "codex login required"
@@ -147,38 +147,38 @@ def test_forge_returns_health_failure_without_api_call(
 
 
 # ---------------------------------------------------------------------------
-# 2-5) Input validation via ForgeOptions.__post_init__
+# 2-5) Input validation via ImagenOptions.__post_init__
 # ---------------------------------------------------------------------------
 
 
-def test_forge_invalid_mode_raises(tmp_path: Path) -> None:
+def test_imagen_invalid_mode_raises(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="mode must be one of"):
-        forge(prompt="hi", output_dir=tmp_path, mode="bogus")
+        imagen(prompt="hi", output_dir=tmp_path, mode="bogus")
 
 
-def test_forge_invalid_batch_mode_raises(tmp_path: Path) -> None:
+def test_imagen_invalid_batch_mode_raises(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="batch_mode must be one of"):
-        forge(prompt="hi", output_dir=tmp_path, batch_mode="nonsense")
+        imagen(prompt="hi", output_dir=tmp_path, batch_mode="nonsense")
 
 
-def test_forge_invalid_output_format_raises(tmp_path: Path) -> None:
+def test_imagen_invalid_output_format_raises(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="output_format must be one of"):
-        forge(prompt="hi", output_dir=tmp_path, output_format="bmp")
+        imagen(prompt="hi", output_dir=tmp_path, output_format="bmp")
 
 
-def test_forge_invalid_count_raises(tmp_path: Path) -> None:
+def test_imagen_invalid_count_raises(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="count must be >= 1"):
-        forge(prompt="hi", output_dir=tmp_path, count=0)
+        imagen(prompt="hi", output_dir=tmp_path, count=0)
 
 
-def test_forge_invalid_chroma_tolerance_raises(tmp_path: Path) -> None:
+def test_imagen_invalid_chroma_tolerance_raises(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="chroma_tolerance must be in 0..100"):
-        forge(prompt="hi", output_dir=tmp_path, chroma_tolerance=500)
+        imagen(prompt="hi", output_dir=tmp_path, chroma_tolerance=500)
 
 
-def test_forge_invalid_parallel_raises(tmp_path: Path) -> None:
+def test_imagen_invalid_parallel_raises(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="parallel must be >= 1"):
-        forge(prompt="hi", output_dir=tmp_path, parallel=0)
+        imagen(prompt="hi", output_dir=tmp_path, parallel=0)
 
 
 # ---------------------------------------------------------------------------
@@ -186,8 +186,8 @@ def test_forge_invalid_parallel_raises(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_forge_path_options_converted_to_path(tmp_path: Path) -> None:
-    options = ForgeOptions(prompt="hi", output_dir=str(tmp_path))
+def test_imagen_path_options_converted_to_path(tmp_path: Path) -> None:
+    options = ImagenOptions(prompt="hi", output_dir=str(tmp_path))
     assert isinstance(options.output_dir, Path)
     assert options.output_dir == tmp_path
 
@@ -197,17 +197,17 @@ def test_forge_path_options_converted_to_path(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_forge_single_prompt_happy_path(
+def test_imagen_single_prompt_happy_path(
     healthy_bridge: FakeBridge,
     tmp_path: Path,
 ) -> None:
-    result = forge(prompt="a coffee mug", output_dir=tmp_path, mode="raw")
+    result = imagen(prompt="a coffee mug", output_dir=tmp_path, mode="raw")
 
     assert result.ok is True
     assert len(result.images) == 1
     assert result.batch_mode == "single"
     img = result.images[0]
-    assert isinstance(img, ForgeImage)
+    assert isinstance(img, ImagenImage)
     assert img.index == 0
     assert img.path.exists()
     assert img.bytes > 0
@@ -224,11 +224,11 @@ def test_forge_single_prompt_happy_path(
 # ---------------------------------------------------------------------------
 
 
-def test_forge_parallel_list_prompts(
+def test_imagen_parallel_list_prompts(
     healthy_bridge: FakeBridge,
     tmp_path: Path,
 ) -> None:
-    result = forge(
+    result = imagen(
         prompt=["a", "b", "c"],
         output_dir=tmp_path,
         mode="raw",
@@ -245,12 +245,12 @@ def test_forge_parallel_list_prompts(
 # ---------------------------------------------------------------------------
 
 
-def test_forge_size_invalid_uses_nearest_legal_with_warning(
+def test_imagen_size_invalid_uses_nearest_legal_with_warning(
     healthy_bridge: FakeBridge,
     tmp_path: Path,
 ) -> None:
     # 800x800 is parseable but too small (below pixel floor).
-    result = forge(
+    result = imagen(
         prompt="x",
         output_dir=tmp_path,
         mode="raw",
@@ -266,7 +266,7 @@ def test_forge_size_invalid_uses_nearest_legal_with_warning(
     assert healthy_bridge.calls[0]["size"] != "800x800"
 
 
-def test_forge_size_invalid_unrecoverable_returns_error(
+def test_imagen_size_invalid_unrecoverable_returns_error(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -275,7 +275,7 @@ def test_forge_size_invalid_unrecoverable_returns_error(
     monkeypatch.setattr(core._bridge, "generate", fb)
 
     # Unparseable string — _size.validate returns suggestion=None.
-    result = forge(prompt="x", output_dir=tmp_path, size="not-a-size")
+    result = imagen(prompt="x", output_dir=tmp_path, size="not-a-size")
 
     assert result.ok is False
     assert result.error is not None
@@ -289,14 +289,14 @@ def test_forge_size_invalid_unrecoverable_returns_error(
 # ---------------------------------------------------------------------------
 
 
-def test_forge_skills_loaded_in_medium_mode(
+def test_imagen_skills_loaded_in_medium_mode(
     healthy_bridge: FakeBridge,
     tmp_path: Path,
 ) -> None:
     skill_file = tmp_path / "myskill.md"
     skill_file.write_text("# My skill\n\nBe extra editorial.\n", encoding="utf-8")
 
-    result = forge(
+    result = imagen(
         prompt="x",
         output_dir=tmp_path / "out",
         mode="medium",
@@ -310,14 +310,14 @@ def test_forge_skills_loaded_in_medium_mode(
     assert "Be extra editorial" in instructions
 
 
-def test_forge_skills_ignored_in_raw_mode_with_warning(
+def test_imagen_skills_ignored_in_raw_mode_with_warning(
     healthy_bridge: FakeBridge,
     tmp_path: Path,
 ) -> None:
     skill_file = tmp_path / "myskill.md"
     skill_file.write_text("# Should be ignored\n", encoding="utf-8")
 
-    result = forge(
+    result = imagen(
         prompt="x",
         output_dir=tmp_path / "out",
         mode="raw",
@@ -330,11 +330,11 @@ def test_forge_skills_ignored_in_raw_mode_with_warning(
     assert "Should be ignored" not in instructions
 
 
-def test_forge_missing_skill_file_warns_but_succeeds(
+def test_imagen_missing_skill_file_warns_but_succeeds(
     healthy_bridge: FakeBridge,
     tmp_path: Path,
 ) -> None:
-    result = forge(
+    result = imagen(
         prompt="x",
         output_dir=tmp_path / "out",
         mode="medium",
@@ -349,7 +349,7 @@ def test_forge_missing_skill_file_warns_but_succeeds(
 # ---------------------------------------------------------------------------
 
 
-def test_forge_transparent_routes_to_chroma(
+def test_imagen_transparent_routes_to_chroma(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -365,7 +365,7 @@ def test_forge_transparent_routes_to_chroma(
 
     monkeypatch.setattr(core._chroma, "keyout", fake_keyout)
 
-    result = forge(
+    result = imagen(
         prompt="x",
         output_dir=tmp_path,
         mode="raw",
@@ -378,7 +378,7 @@ def test_forge_transparent_routes_to_chroma(
     assert fb.calls[0].get("background") == "opaque"
 
 
-def test_forge_transparent_without_pillow_falls_back_with_warning(
+def test_imagen_transparent_without_pillow_falls_back_with_warning(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -394,7 +394,7 @@ def test_forge_transparent_without_pillow_falls_back_with_warning(
 
     monkeypatch.setattr(core._chroma, "keyout", boom)
 
-    result = forge(
+    result = imagen(
         prompt="x",
         output_dir=tmp_path,
         mode="raw",
@@ -413,7 +413,7 @@ def test_forge_transparent_without_pillow_falls_back_with_warning(
 # ---------------------------------------------------------------------------
 
 
-def test_forge_partial_failure_partial_success(
+def test_imagen_partial_failure_partial_success(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -422,7 +422,7 @@ def test_forge_partial_failure_partial_success(
     fb = FakeBridge(fail_indices={2})
     monkeypatch.setattr(core._bridge, "generate", fb)
 
-    result = forge(
+    result = imagen(
         prompt=["a", "b", "c"],
         output_dir=tmp_path,
         mode="raw",
@@ -437,7 +437,7 @@ def test_forge_partial_failure_partial_success(
     assert any("failed" in w for w in result.warnings)
 
 
-def test_forge_all_failures_returns_ok_false(
+def test_imagen_all_failures_returns_ok_false(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -445,7 +445,7 @@ def test_forge_all_failures_returns_ok_false(
     fb = FakeBridge(fail_indices={1, 2})
     monkeypatch.setattr(core._bridge, "generate", fb)
 
-    result = forge(
+    result = imagen(
         prompt=["a", "b"],
         output_dir=tmp_path,
         mode="raw",
@@ -462,11 +462,11 @@ def test_forge_all_failures_returns_ok_false(
 # ---------------------------------------------------------------------------
 
 
-def test_forge_manifest_written_jsonl(
+def test_imagen_manifest_written_jsonl(
     healthy_bridge: FakeBridge,
     tmp_path: Path,
 ) -> None:
-    result = forge(
+    result = imagen(
         prompt=["a", "b", "c"],
         output_dir=tmp_path,
         mode="raw",
@@ -492,22 +492,22 @@ def test_forge_manifest_written_jsonl(
 # ---------------------------------------------------------------------------
 
 
-def test_forge_elapsed_ms_populated(
+def test_imagen_elapsed_ms_populated(
     healthy_bridge: FakeBridge,
     tmp_path: Path,
 ) -> None:
-    result = forge(prompt="x", output_dir=tmp_path, mode="raw")
+    result = imagen(prompt="x", output_dir=tmp_path, mode="raw")
     assert isinstance(result.elapsed_ms, int)
     assert result.elapsed_ms >= 0
 
 
-def test_forge_health_failure_still_reports_elapsed_ms(
+def test_imagen_health_failure_still_reports_elapsed_ms(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(core._bridge, "health_check", lambda: _bad_health())
     monkeypatch.setattr(core._bridge, "generate", FakeBridge())
-    result = forge(prompt="x", output_dir=tmp_path)
+    result = imagen(prompt="x", output_dir=tmp_path)
     assert isinstance(result.elapsed_ms, int)
     assert result.elapsed_ms >= 0
 
@@ -517,25 +517,25 @@ def test_forge_health_failure_still_reports_elapsed_ms(
 # ---------------------------------------------------------------------------
 
 
-def test_forge_options_defensive_copy_of_vars(tmp_path: Path) -> None:
+def test_imagen_options_defensive_copy_of_vars(tmp_path: Path) -> None:
     user_vars = {"char": "alice"}
-    options = ForgeOptions(prompt="hi {char}", output_dir=tmp_path, vars=user_vars)
+    options = ImagenOptions(prompt="hi {char}", output_dir=tmp_path, vars=user_vars)
     # Caller mutates the original dict — must not affect the frozen options.
     user_vars["char"] = "bob"
     user_vars["new"] = "x"
     assert options.vars == {"char": "alice"}
 
 
-def test_forge_options_defensive_copy_of_advanced(tmp_path: Path) -> None:
+def test_imagen_options_defensive_copy_of_advanced(tmp_path: Path) -> None:
     user_adv = {"reasoning_effort": "high"}
-    options = ForgeOptions(prompt="x", output_dir=tmp_path, advanced=user_adv)
+    options = ImagenOptions(prompt="x", output_dir=tmp_path, advanced=user_adv)
     user_adv["reasoning_effort"] = "low"
     user_adv["new_key"] = "boom"
     assert options.advanced == {"reasoning_effort": "high"}
 
 
 # ---------------------------------------------------------------------------
-# Sanity: forge() is reachable through the package re-export
+# Sanity: imagen() is reachable through the package re-export
 # ---------------------------------------------------------------------------
 
 
@@ -544,7 +544,7 @@ def test_forge_options_defensive_copy_of_advanced(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_forge_manifest_mode_and_batch_mode_are_distinct(
+def test_imagen_manifest_mode_and_batch_mode_are_distinct(
     healthy_bridge: FakeBridge,
     tmp_path: Path,
 ) -> None:
@@ -552,7 +552,7 @@ def test_forge_manifest_mode_and_batch_mode_are_distinct(
     `batch_mode` is the orchestration mode (single/parallel/...).
     They must carry distinct values.
     """
-    result = forge(
+    result = imagen(
         prompt=["a coffee mug", "a teapot"],
         output_dir=tmp_path,
         mode="medium",
@@ -582,7 +582,7 @@ def test_forge_manifest_mode_and_batch_mode_are_distinct(
 # ---------------------------------------------------------------------------
 
 
-def test_forge_auto_mode_resolves_reasoning_effort_for_transparent(
+def test_imagen_auto_mode_resolves_reasoning_effort_for_transparent(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -594,7 +594,7 @@ def test_forge_auto_mode_resolves_reasoning_effort_for_transparent(
     monkeypatch.setattr(core._bridge, "generate", fb)
     monkeypatch.setattr(core._chroma, "keyout", _fake_chroma_keyout)
 
-    result = forge(
+    result = imagen(
         prompt="a coffee mug",
         output_dir=tmp_path,
         mode="auto",
@@ -606,14 +606,14 @@ def test_forge_auto_mode_resolves_reasoning_effort_for_transparent(
     assert result.mode == "medium"
 
 
-def test_forge_auto_mode_resolves_to_raw_when_no_enrichment(
+def test_imagen_auto_mode_resolves_to_raw_when_no_enrichment(
     healthy_bridge: FakeBridge,
     tmp_path: Path,
 ) -> None:
     """auto + plain str prompt + no skills/transparent/extras → resolves
     to raw, which maps to reasoning_effort="none".
     """
-    result = forge(
+    result = imagen(
         prompt="a coffee mug",
         output_dir=tmp_path,
         mode="auto",
@@ -623,14 +623,14 @@ def test_forge_auto_mode_resolves_to_raw_when_no_enrichment(
     assert result.mode == "raw"
 
 
-def test_forge_auto_mode_resolves_to_high_for_verbatim_dict(
+def test_imagen_auto_mode_resolves_to_high_for_verbatim_dict(
     healthy_bridge: FakeBridge,
     tmp_path: Path,
 ) -> None:
     """auto + dict prompt with non-empty text_verbatim → resolves to high
     (mirrors _prompts.build verbatim auto-bump).
     """
-    result = forge(
+    result = imagen(
         prompt={"subject": "a sign", "text_verbatim": "OPEN"},
         output_dir=tmp_path,
         mode="auto",
@@ -645,7 +645,7 @@ def test_forge_auto_mode_resolves_to_high_for_verbatim_dict(
 # ---------------------------------------------------------------------------
 
 
-def test_forge_manifest_write_failure_demoted_to_warning(
+def test_imagen_manifest_write_failure_demoted_to_warning(
     healthy_bridge: FakeBridge,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -655,7 +655,7 @@ def test_forge_manifest_write_failure_demoted_to_warning(
     Manifest writes are explicitly non-fatal (see _manifest module docstring
     "Failure policy"). A disk-full / read-only-FS condition must not crash a
     successful generation — the orchestrator catches OSError, demotes it to
-    a warning on ForgeResult.warnings, leaves manifest_path=None, and still
+    a warning on ImagenResult.warnings, leaves manifest_path=None, and still
     returns ok=True with the produced image(s).
     """
 
@@ -664,7 +664,7 @@ def test_forge_manifest_write_failure_demoted_to_warning(
 
     monkeypatch.setattr(core._manifest, "append", boom)
 
-    result = forge(prompt="a coffee mug", output_dir=tmp_path, mode="raw")
+    result = imagen(prompt="a coffee mug", output_dir=tmp_path, mode="raw")
 
     assert result.ok is True
     assert len(result.images) >= 1
@@ -674,9 +674,9 @@ def test_forge_manifest_write_failure_demoted_to_warning(
     ), f"missing manifest-write warning; got: {result.warnings}"
 
 
-def test_forge_importable_from_package() -> None:
+def test_imagen_importable_from_package() -> None:
     import codex_imagen
 
-    assert codex_imagen.forge is forge
-    assert codex_imagen.ForgeOptions is ForgeOptions
-    assert codex_imagen.ForgeResult is ForgeResult
+    assert codex_imagen.imagen is imagen
+    assert codex_imagen.ImagenOptions is ImagenOptions
+    assert codex_imagen.ImagenResult is ImagenResult

@@ -26,7 +26,7 @@ This module is the only place that builds those two strings. It knows:
 
 Role in architecture
 --------------------
-``core.forge()`` → ``_modes.run_*()`` → ``_prompts.build()`` → returns
+``core.imagen()`` → ``_modes.run_*()`` → ``_prompts.build()`` → returns
 ``BuiltPrompt`` → ``_bridge.generate(prompt=…, instructions=…, …)``.
 
 This module is intentionally bridge-agnostic. It must not import

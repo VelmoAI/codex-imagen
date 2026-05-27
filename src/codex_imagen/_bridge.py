@@ -26,10 +26,10 @@ Key responsibilities
 
 Role in architecture
 --------------------
-``core.forge()`` → ``_modes.run_*()`` → ``_bridge.generate()`` → upstream
+``core.imagen()`` → ``_modes.run_*()`` → ``_bridge.generate()`` → upstream
 ``codex_image_gen.generate_image()`` → Codex OAuth Responses bridge.
 
-This module does **not** know about ForgeOptions, modes, skills, chroma key,
+This module does **not** know about ImagenOptions, modes, skills, chroma key,
 or manifests. Keep it that way — those concerns live one layer up.
 """
 
@@ -180,8 +180,8 @@ def _jwt_exp(token: str | None) -> int | None:
     return None
 
 
-# TODO(task 9): Once core.ForgeHealth is fully defined, this should return
-# ForgeHealth directly instead of a dict.
+# TODO(task 9): Once core.ImagenHealth is fully defined, this should return
+# ImagenHealth directly instead of a dict.
 def health_check() -> dict[str, Any]:
     """Inspect the local environment without making any API call.
 
@@ -307,7 +307,7 @@ def _sanitize_params(
     partial_images: int | None,
     output_compression: int | None,
 ) -> tuple[dict[str, Any], list[str]]:
-    """Filter forge-level kwargs down to what the bridge actually accepts.
+    """Filter imagen-level kwargs down to what the bridge actually accepts.
 
     The Codex OAuth bridge silently drops or 400-rejects several plausible
     values (see ``SPEC.md`` "Architecture Facts"). We pre-filter so callers
@@ -334,12 +334,12 @@ def _sanitize_params(
     clean["output_format"] = output_format
 
     # background — SPEC: bridge rejects 'transparent' with HTTP 400.
-    # forge's chroma pipeline (Pillow) handles transparency post-process.
+    # imagen's chroma pipeline (Pillow) handles transparency post-process.
     if background == "transparent":
         warnings.append(
             "background='transparent' is not supported by the Codex bridge "
             "(HTTP 400). Downgraded to 'opaque'. Use the chroma-key "
-            "pipeline (transparent=True in forge()) for alpha output."
+            "pipeline (transparent=True in imagen()) for alpha output."
         )
         clean["background"] = "opaque"
     elif background not in _ALLOWED_BACKGROUNDS:
@@ -474,7 +474,7 @@ def generate(
 ) -> BridgeResult:
     """Generate one image, persist it to disk, return metadata.
 
-    This is the single chokepoint through which all higher-level forge
+    This is the single chokepoint through which all higher-level imagen
     code reaches the Codex bridge. It performs (in order): health check,
     parameter sanitization, retry loop, disk write, partial-image write,
     metadata assembly.
@@ -543,7 +543,7 @@ def generate(
                 hint=health["hint"],
             )
 
-    # --- 2) Sanitize forge-level kwargs into bridge-accepted shape. ---------
+    # --- 2) Sanitize imagen-level kwargs into bridge-accepted shape. ---------
     # This may raise ValueError (output_format) — let it propagate; callers
     # need to know they passed something unsendable.
     clean, warnings = _sanitize_params(

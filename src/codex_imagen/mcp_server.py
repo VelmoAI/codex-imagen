@@ -1,21 +1,21 @@
-"""codex_imagen.mcp_server — stdio MCP server exposing a single ``forge`` tool.
+"""codex_imagen.mcp_server — stdio MCP server exposing a single ``imagen`` tool.
 
-This module wires the :func:`codex_imagen.forge` SDK entry point into a
+This module wires the :func:`codex_imagen.imagen` SDK entry point into a
 stdio-based Model Context Protocol server so AI clients (Claude Desktop,
 Cursor, etc.) can invoke image generation as a structured tool call.
 
 Design notes
 ------------
-* **One tool, one surface.** We expose exactly one tool named ``forge``.
-  Its JSON Schema mirrors :class:`codex_imagen.ForgeOptions` field-for-field,
+* **One tool, one surface.** We expose exactly one tool named ``imagen``.
+  Its JSON Schema mirrors :class:`codex_imagen.ImagenOptions` field-for-field,
   including the enum constraints for ``mode`` / ``batch_mode`` /
   ``output_format``. The schema is the contract — adding a knob to
-  ``ForgeOptions`` REQUIRES adding it here, and a drift test pins this.
+  ``ImagenOptions`` REQUIRES adding it here, and a drift test pins this.
 
-* **Errors are results, not exceptions.** Per SPEC.md the ``forge`` contract
+* **Errors are results, not exceptions.** Per SPEC.md the ``imagen`` contract
   guarantees ``ok=False`` + actionable hint on failure rather than crashing.
   We honor that at the MCP layer too: ``ValueError`` / ``TypeError`` raised
-  by :class:`codex_imagen.ForgeOptions` (bad args) and by :func:`forge`
+  by :class:`codex_imagen.ImagenOptions` (bad args) and by :func:`imagen`
   itself are caught and surfaced as JSON ``{ok: false, error, error_type}``
   in the tool result. The MCP client always gets a successful tool call
   with a structured payload it can introspect — never a protocol-level
@@ -42,8 +42,8 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-from codex_imagen import __version__, forge
-from codex_imagen.core import ForgeResult
+from codex_imagen import __version__, imagen
+from codex_imagen.core import ImagenResult
 
 
 # ---------------------------------------------------------------------------
@@ -55,7 +55,7 @@ from codex_imagen.core import ForgeResult
 # in sync with the SPEC; do not paraphrase. Bullets use Unicode middle dot
 # (U+2022) to match the SPEC exactly.
 TOOL_DESCRIPTION = (
-    "forge — Codex image generator. Generate, batch, chain, or branded "
+    "imagen — Codex image generator. Generate, batch, chain, or branded "
     "sets of images.\n"
     "\n"
     "PROMPT: string for single image, dict for structured Codex labeled-spec,\n"
@@ -84,11 +84,11 @@ TOOL_DESCRIPTION = (
     "              (Native transparent background is not available via Codex "
     "OAuth.)\n"
     "\n"
-    "SKILLS: pass file paths to .md skill files. forge reads them and merges "
+    "SKILLS: pass file paths to .md skill files. imagen reads them and merges "
     "into\n"
     "        instructions. Works with Claude/Codex skill files directly.\n"
     "\n"
-    "Returns ForgeResult JSON with ok flag, images list, manifest path, "
+    "Returns ImagenResult JSON with ok flag, images list, manifest path, "
     "health.\n"
     "On failure: ok=false + hint instead of crashing."
 )
@@ -311,8 +311,8 @@ def _normalize(value: Any) -> Any:
     return value
 
 
-def _result_to_dict(result: ForgeResult) -> dict[str, Any]:
-    """Convert :class:`ForgeResult` to a JSON-friendly dict.
+def _result_to_dict(result: ImagenResult) -> dict[str, Any]:
+    """Convert :class:`ImagenResult` to a JSON-friendly dict.
 
     Parallels :func:`codex_imagen.cli._result_to_json_dict`. We keep a small
     duplicate here (rather than importing from ``cli.py``) because the CLI
@@ -338,7 +338,7 @@ def _result_to_dict(result: ForgeResult) -> dict[str, Any]:
 
 
 def _build_error_payload(exc: BaseException) -> dict[str, Any]:
-    """Build the ``ok=false`` payload returned when forge() raises.
+    """Build the ``ok=false`` payload returned when imagen() raises.
 
     SPEC mandates ``ok=false + hint`` over an exception. We classify the
     exception type so the calling AI can decide whether to retry with
@@ -352,12 +352,12 @@ def _build_error_payload(exc: BaseException) -> dict[str, Any]:
     }
 
 
-def _call_forge_sync(arguments: dict[str, Any]) -> str:
-    """Run :func:`forge` defensively and return a JSON string.
+def _call_imagen_sync(arguments: dict[str, Any]) -> str:
+    """Run :func:`imagen` defensively and return a JSON string.
 
     Wraps every expected failure into the ``ok=false`` shape. We catch
     :class:`ValueError` and :class:`TypeError` explicitly because those
-    are the documented programming-error exits from ``ForgeOptions``
+    are the documented programming-error exits from ``ImagenOptions``
     validation. Other exceptions (e.g. ``KeyboardInterrupt``) are allowed
     to propagate so the MCP runtime can shut down cleanly.
     """
@@ -373,7 +373,7 @@ def _call_forge_sync(arguments: dict[str, Any]) -> str:
         )
 
     try:
-        result = forge(**arguments)
+        result = imagen(**arguments)
     except (ValueError, TypeError) as exc:
         return json.dumps(_build_error_payload(exc), indent=2)
 
@@ -395,7 +395,7 @@ async def _list_tools() -> list[Tool]:
     """Return the single-tool catalog for ``tools/list`` requests."""
     return [
         Tool(
-            name="forge",
+            name="imagen",
             description=TOOL_DESCRIPTION,
             inputSchema=TOOL_INPUT_SCHEMA,
         )
@@ -406,15 +406,15 @@ async def _list_tools() -> list[Tool]:
 async def _call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """Handle ``tools/call`` requests.
 
-    Only ``forge`` is recognized. Anything else raises ``ValueError`` which
+    Only ``imagen`` is recognized. Anything else raises ``ValueError`` which
     the MCP framework converts into a JSON-RPC error response — that's the
     right shape for "unknown tool name" because it indicates a client bug,
-    not a user-facing forge() failure.
+    not a user-facing imagen() failure.
     """
-    if name != "forge":
-        raise ValueError(f"unknown tool: {name!r} (only 'forge' is exposed)")
+    if name != "imagen":
+        raise ValueError(f"unknown tool: {name!r} (only 'imagen' is exposed)")
 
-    payload = _call_forge_sync(arguments or {})
+    payload = _call_imagen_sync(arguments or {})
     return [TextContent(type="text", text=payload)]
 
 

@@ -2,7 +2,7 @@
 
 Purpose
 -------
-Skills are plain Markdown files that users (or AI agents calling forge)
+Skills are plain Markdown files that users (or AI agents calling imagen)
 reference by file path via the ``skills=`` parameter. This module reads
 those files, strips optional YAML frontmatter, concatenates the bodies
 with a sentinel separator, and returns a hash for drift detection.

@@ -1,9 +1,9 @@
 """codex_imagen.core — public dataclasses + orchestrator entry point.
 
 This is the GLUE layer. It owns the public-facing dataclasses
-(:class:`ForgeOptions`, :class:`ForgeResult`, :class:`ForgeImage`,
-:class:`ForgeHealth`) and the single user-facing function
-:func:`forge`. The actual work is delegated to the leaf modules:
+(:class:`ImagenOptions`, :class:`ImagenResult`, :class:`ImagenImage`,
+:class:`ImagenHealth`) and the single user-facing function
+:func:`imagen`. The actual work is delegated to the leaf modules:
 
 * :mod:`codex_imagen._bridge`   — health check + low-level bridge call
 * :mod:`codex_imagen._prompts`  — prompt builder (raw / medium / high / max)
@@ -13,20 +13,20 @@ This is the GLUE layer. It owns the public-facing dataclasses
 * :mod:`codex_imagen._modes`    — five-mode batch orchestration
 * :mod:`codex_imagen._manifest` — JSONL manifest writer
 
-High-level flow inside :func:`forge`::
+High-level flow inside :func:`imagen`::
 
-    forge(**kwargs)
-      -> ForgeOptions(**kwargs)                # validate via dataclass
-      -> _bridge.health_check()                # if not ok: return ForgeResult(ok=False)
+    imagen(**kwargs)
+      -> ImagenOptions(**kwargs)               # validate via dataclass
+      -> _bridge.health_check()                # if not ok: return ImagenResult(ok=False)
       -> resolve mode (raw/medium/high/max -> reasoning_effort)
       -> load skills (if non-raw and any paths)
       -> validate size (fallback to nearest_legal on failure)
       -> _modes.detect_mode(...)               # auto -> concrete
       -> _modes.plan(...)                      # build PlannedCalls
       -> _modes.execute_plan(...)              # actually call the bridge
-      -> convert each call result -> ForgeImage
+      -> convert each call result -> ImagenImage
       -> append one manifest line per success
-      -> return ForgeResult
+      -> return ImagenResult
 
 This module deliberately knows nothing about HTTP, Pillow internals, or
 Codex's instruction grammar. All of that lives one layer down.
@@ -52,8 +52,8 @@ from codex_imagen._prompts import resolve_auto_mode
 
 
 @dataclass(frozen=True)
-class ForgeImage:
-    """One generated image. See SPEC.md "ForgeResult" for field meanings."""
+class ImagenImage:
+    """One generated image. See SPEC.md "ImagenResult" for field meanings."""
 
     index: int
     path: Path
@@ -72,8 +72,8 @@ class ForgeImage:
 
 
 @dataclass(frozen=True)
-class ForgeHealth:
-    """Pre-flight health-check result. Always populated on ForgeResult."""
+class ImagenHealth:
+    """Pre-flight health-check result. Always populated on ImagenResult."""
 
     ok: bool = False
     codex_image_gen_available: bool = False
@@ -84,8 +84,8 @@ class ForgeHealth:
 
 
 @dataclass(frozen=True)
-class ForgeResult:
-    """Outcome of one :func:`forge` invocation.
+class ImagenResult:
+    """Outcome of one :func:`imagen` invocation.
 
     ``ok`` is True iff at least one image was generated successfully.
     A health failure (no API call) returns ``ok=False`` with the actionable
@@ -97,15 +97,15 @@ class ForgeResult:
     ok: bool
     mode: str
     batch_mode: str
-    images: tuple[ForgeImage, ...]
+    images: tuple[ImagenImage, ...]
     manifest_path: Path | None
     elapsed_ms: int
-    health: ForgeHealth
+    health: ImagenHealth
     error: str | None
     warnings: tuple[str, ...]
 
 
-# Validation constants for ForgeOptions.
+# Validation constants for ImagenOptions.
 _VALID_MODES: tuple[str, ...] = ("auto", "raw", "medium", "high", "max")
 _VALID_BATCH_MODES: tuple[str, ...] = (
     "auto",
@@ -132,11 +132,11 @@ _MODE_TO_REASONING_EFFORT: dict[str, str | None] = {
 
 
 @dataclass(frozen=True)
-class ForgeOptions:
-    """User-facing options for :func:`forge`. All fields have defaults so
+class ImagenOptions:
+    """User-facing options for :func:`imagen`. All fields have defaults so
     callers only need to pass ``prompt``.
 
-    Fields mirror SPEC.md "ForgeOptions" — see that section for the
+    Fields mirror SPEC.md "ImagenOptions" — see that section for the
     authoritative description of every knob. ``__post_init__`` validates
     the constrained enums (mode / batch_mode / output_format) and the
     numeric ranges (count / parallel / chroma_tolerance) so the user gets
@@ -225,7 +225,7 @@ class ForgeOptions:
             object.__setattr__(self, "skills", tuple(self.skills))
 
         # Defensive copies of mutable dict inputs so caller mutations
-        # after-the-fact can't poison a later forge() call. ``vars``
+        # after-the-fact can't poison a later imagen() call. ``vars``
         # default is the empty dict (per dataclasses.field default_factory).
         object.__setattr__(self, "vars", dict(self.vars))
         object.__setattr__(self, "advanced", dict(self.advanced))
@@ -236,9 +236,9 @@ class ForgeOptions:
 # ---------------------------------------------------------------------------
 
 
-def _health_from_dict(health_dict: dict[str, Any]) -> ForgeHealth:
-    """Convert the bridge's health dict to :class:`ForgeHealth`."""
-    return ForgeHealth(
+def _health_from_dict(health_dict: dict[str, Any]) -> ImagenHealth:
+    """Convert the bridge's health dict to :class:`ImagenHealth`."""
+    return ImagenHealth(
         ok=bool(health_dict.get("ok", False)),
         codex_image_gen_available=bool(
             health_dict.get("codex_image_gen_available", False)
@@ -342,14 +342,14 @@ def _build_advanced(
     return out
 
 
-def _call_to_image(call_result: dict[str, Any]) -> ForgeImage:
+def _call_to_image(call_result: dict[str, Any]) -> ImagenImage:
     """Convert a successful call_result dict (from execute_plan) into a
-    :class:`ForgeImage`.
+    :class:`ImagenImage`.
     """
     path = Path(call_result["path"])
     raw_path_str = call_result.get("raw_path")
     raw_path = Path(raw_path_str) if raw_path_str else None
-    return ForgeImage(
+    return ImagenImage(
         index=int(call_result["index"]),
         path=path,
         bytes=int(call_result.get("bytes") or 0),
@@ -407,8 +407,8 @@ def _build_manifest_entry(
 # ---------------------------------------------------------------------------
 
 
-def _run(options: ForgeOptions) -> ForgeResult:
-    """Execute one forge() pipeline. See module docstring for the flow."""
+def _run(options: ImagenOptions) -> ImagenResult:
+    """Execute one imagen() pipeline. See module docstring for the flow."""
     started = time.perf_counter()
     warnings: list[str] = []
 
@@ -418,7 +418,7 @@ def _run(options: ForgeOptions) -> ForgeResult:
 
     if not health.ok:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
-        return ForgeResult(
+        return ImagenResult(
             ok=False,
             mode=options.mode,
             batch_mode="auto",  # never resolved when health failed
@@ -434,7 +434,7 @@ def _run(options: ForgeOptions) -> ForgeResult:
     effective_size, size_error = _resolve_size(options.size, warnings)
     if effective_size is None:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
-        return ForgeResult(
+        return ImagenResult(
             ok=False,
             mode=options.mode,
             batch_mode="auto",
@@ -484,7 +484,7 @@ def _run(options: ForgeOptions) -> ForgeResult:
     try:
         # Plan & detect handle invalid inputs (e.g. chain with 1 prompt)
         # by raising ValueError / TypeError. We catch those and surface
-        # them as ForgeResult.error rather than letting them escape.
+        # them as ImagenResult.error rather than letting them escape.
         plan = _modes.plan(
             prompt=options.prompt,
             output_dir=Path(options.output_dir),
@@ -498,7 +498,7 @@ def _run(options: ForgeOptions) -> ForgeResult:
         )
     except (ValueError, TypeError) as exc:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
-        return ForgeResult(
+        return ImagenResult(
             ok=False,
             mode=options.mode,
             batch_mode=options.batch_mode,
@@ -560,7 +560,7 @@ def _run(options: ForgeOptions) -> ForgeResult:
     )
 
     # ---- 9) Aggregate results & write manifest. -------------------------
-    images: list[ForgeImage] = []
+    images: list[ImagenImage] = []
     failures: list[str] = []
     manifest_path = Path(options.output_dir) / "manifest.jsonl"
     run_id = _short_run_id()
@@ -609,7 +609,7 @@ def _run(options: ForgeOptions) -> ForgeResult:
 
     if not images:
         # All calls failed.
-        return ForgeResult(
+        return ImagenResult(
             ok=False,
             mode=mode_for_result,
             batch_mode=plan.mode,
@@ -632,7 +632,7 @@ def _run(options: ForgeOptions) -> ForgeResult:
             + "; ".join(failures)
         )
 
-    return ForgeResult(
+    return ImagenResult(
         ok=True,
         mode=mode_for_result,
         batch_mode=plan.mode,
@@ -645,21 +645,21 @@ def _run(options: ForgeOptions) -> ForgeResult:
     )
 
 
-def forge(**kwargs: Any) -> ForgeResult:
+def imagen(**kwargs: Any) -> ImagenResult:
     """Generate one or more images via the Codex OAuth bridge.
 
     Single entry point for all five batch modes (single, parallel,
     variants, chain, branded-parallel). All knobs live on
-    :class:`ForgeOptions` — see that class for the full surface.
+    :class:`ImagenOptions` — see that class for the full surface.
 
     Args:
-        **kwargs: Forwarded to :class:`ForgeOptions`. Unknown keyword
+        **kwargs: Forwarded to :class:`ImagenOptions`. Unknown keyword
             arguments raise ``TypeError`` (dataclass behavior). Bad
             values for known fields raise ``ValueError`` via
-            :meth:`ForgeOptions.__post_init__`.
+            :meth:`ImagenOptions.__post_init__`.
 
     Returns:
-        A :class:`ForgeResult`. The ``ok`` flag is False on health
+        A :class:`ImagenResult`. The ``ok`` flag is False on health
         failure (no API call was made) or when every generation call
         failed. Health failure is *not* an exception — callers get a
         structured result with an actionable ``hint`` in ``error``.
@@ -668,5 +668,5 @@ def forge(**kwargs: Any) -> ForgeResult:
         TypeError: For unknown kwargs (dataclass surfaces this).
         ValueError: For invalid values on known kwargs.
     """
-    options = ForgeOptions(**kwargs)
+    options = ImagenOptions(**kwargs)
     return _run(options)

@@ -16,7 +16,7 @@ alpha channel through that bridge is to:
 
 This module is bridge-agnostic. It speaks Pillow (with an optional NumPy
 fast path) and nothing else — it must not import the bridge, prompt
-builder, or any other forge module.
+builder, or any other imagen module.
 
 Algorithm summary
 -----------------
