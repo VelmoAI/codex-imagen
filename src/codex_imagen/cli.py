@@ -797,7 +797,7 @@ def _print_client_table(statuses: list) -> None:  # type: ignore[type-arg]
 @click.command(name="status")
 def _status_command() -> None:
     """Show detected MCP clients and whether codex-imagen is registered."""
-    from codex_imagen._install import detect_clients
+    from codex_imagen._install import detect_clients, skill_status_for_client
 
     statuses = detect_clients()
     click.echo("codex-imagen MCP installer — client status\n")
@@ -808,6 +808,24 @@ def _status_command() -> None:
     click.echo(
         f"Detected: {detected_count}/5  |  Installed: {installed_count}/5"
     )
+
+    # Skill status table.
+    click.echo()
+    click.echo("Bundled skill (imagen.md) status:")
+    click.echo(f"  {'Client':<16}  {'Skill':<10}  Path")
+    click.echo("  " + "-" * 60)
+    for s in statuses:
+        skill_installed, skill_path = skill_status_for_client(s.key)
+        if skill_installed is None:
+            skill_str = "-"
+            path_str = "(not supported)"
+        elif skill_installed:
+            skill_str = _styled("installed", fg="green")
+            path_str = str(skill_path)
+        else:
+            skill_str = _styled("missing", fg="yellow")
+            path_str = str(skill_path) if skill_path else "(unknown)"
+        click.echo(f"  {s.name:<16}  {skill_str:<10}  {path_str}")
 
 
 # ---------------------------------------------------------------------------
@@ -927,12 +945,17 @@ def _setup_command(install_all: bool, clients: tuple[str, ...], dry_run: bool) -
     click.echo()
     success_count = 0
     codex_selected = "codex" in target_keys
+    from codex_imagen._install import install_skill_for_client
     for key in target_keys:
         ok, msg = install_for_client(key, dry_run=dry_run)
         prefix = _styled("[OK]", fg="green") if ok else _styled("[FAIL]", fg="red")
         click.echo(f"  {prefix}  {msg}")
         if ok:
             success_count += 1
+        # Also install the bundled skill alongside the MCP config.
+        s_ok, s_msg = install_skill_for_client(key, dry_run=dry_run)
+        s_prefix = _styled("[OK]", fg="green") if s_ok else _styled("[FAIL]", fg="red")
+        click.echo(f"  {s_prefix}  skill: {s_msg}")
 
     # Codex AGENTS.md preference snippet.
     if codex_selected and not install_all and not clients:
@@ -1061,12 +1084,17 @@ def _uninstall_command(
     click.echo()
     success_count = 0
     codex_selected = "codex" in target_keys
+    from codex_imagen._install import uninstall_skill_for_client
     for key in target_keys:
         ok, msg = uninstall_for_client(key, dry_run=dry_run)
         prefix = _styled("[OK]", fg="green") if ok else _styled("[FAIL]", fg="red")
         click.echo(f"  {prefix}  {msg}")
         if ok:
             success_count += 1
+        # Also remove the bundled skill.
+        s_ok, s_msg = uninstall_skill_for_client(key, dry_run=dry_run)
+        s_prefix = _styled("[OK]", fg="green") if s_ok else _styled("[FAIL]", fg="red")
+        click.echo(f"  {s_prefix}  skill: {s_msg}")
 
     if codex_selected:
         ok, msg = remove_codex_preference_snippet(dry_run=dry_run)

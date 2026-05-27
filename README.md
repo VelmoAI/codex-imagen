@@ -4,7 +4,7 @@ A maximally-powerful, agent-friendly toolkit for image generation via the Codex 
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-293%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-325%20passing-brightgreen)
 ![Powered by](https://img.shields.io/badge/powered%20by-Codex%20OAuth-black)
 
 `codex-imagen` is a single engine wrapped in three interfaces — a Python SDK, a dual-mode CLI, and a stdio MCP server. It speaks five batch modes (single / parallel / variants / chain / branded-parallel), builds Codex-grade labeled-spec prompts, post-processes transparency through a chroma-key pipeline, and accepts Claude/Codex skill files as drop-in style packs. Authentication piggybacks on the local ChatGPT login at `~/.codex/auth.json`, so you generate images on your subscription quota — no separate API key, no per-image billing surprises.
@@ -35,6 +35,23 @@ imagen setup --client cursor    # target a specific client
 imagen uninstall --all          # remove everywhere
 imagen setup --dry-run --all    # preview what would happen, no changes
 ```
+
+### Bundled AI skill
+
+`imagen setup` also installs a self-describing skill file alongside the MCP config.
+After setup, your AI agent automatically knows how to call `imagen` — modes, batch
+strategies, transparency, brand sets — without you explaining it.
+
+| Client | Skill location |
+|---|---|
+| Claude Code | `~/.claude/skills/imagen/SKILL.md` |
+| Claude Desktop | `~/.claude/skills/imagen/SKILL.md` |
+| Codex | `~/.codex/skills/imagen/SKILL.md` |
+| Cursor / OpenCode | skill concept not yet supported |
+
+The skill (`src/codex_imagen/_assets/skills/imagen.md`) ships inside the wheel so
+it is always in sync with the installed version. `imagen uninstall` removes it;
+`imagen status` shows whether it is present per client.
 
 ---
 
@@ -323,7 +340,7 @@ pip install -e .[dev]
 python -m pytest tests/ -v
 ```
 
-**293 tests, no real API calls.** The suite runs against a `fake_bridge` fixture in `tests/conftest.py` that returns deterministic synthetic images, so it is fast (sub-second), offline, and free.
+**325 tests, no real API calls.** The suite runs against a `fake_bridge` fixture in `tests/conftest.py` that returns deterministic synthetic images, so it is fast (sub-second), offline, and free.
 
 ---
 
@@ -343,7 +360,7 @@ You should see `./smoke-test/00.png` and `./smoke-test/manifest.jsonl`.
 
 ## Contributing
 
-PRs welcome. Please run `python -m pytest tests/ -v` before submitting — all 293 tests should still pass. Bug reports with minimal reproductions are especially helpful; see [`SPEC.md`](./SPEC.md) for the design constraints any change should respect.
+PRs welcome. Please run `python -m pytest tests/ -v` before submitting — all 325 tests should still pass. Bug reports with minimal reproductions are especially helpful; see [`SPEC.md`](./SPEC.md) for the design constraints any change should respect.
 
 ---
 

@@ -25,6 +25,7 @@ Design constraints
 
 from __future__ import annotations
 
+import importlib.resources as _ir
 import json
 import os
 import platform
@@ -558,3 +559,120 @@ def remove_codex_preference_snippet(dry_run: bool = False) -> tuple[bool, str]:
         return True, f"Preference snippet removed from {path}"
     except OSError as exc:
         return False, f"Could not write {path}: {exc}"
+
+
+# ---------------------------------------------------------------------------
+# Bundled skill install / uninstall / status
+# ---------------------------------------------------------------------------
+#
+# Claude Code skill layout: ~/.claude/skills/<name>/SKILL.md
+# Codex skill layout:       ~/.codex/skills/<name>/SKILL.md  (if dir exists)
+# Claude Desktop:           shares ~/.claude/skills/ with Claude Code
+# Cursor / OpenCode:        no skill concept yet — skip with a note
+#
+# ---------------------------------------------------------------------------
+
+_SKILL_NAME = "imagen"
+_SKILL_FILENAME = "SKILL.md"
+
+
+def _skill_path_for_client(key: str) -> Path | None:
+    """Return the target skill file path for ``key``, or None if unsupported."""
+    if key in ("claude-code", "claude-desktop"):
+        return _home() / ".claude" / "skills" / _SKILL_NAME / _SKILL_FILENAME
+    if key == "codex":
+        return _home() / ".codex" / "skills" / _SKILL_NAME / _SKILL_FILENAME
+    # cursor / opencode: no skill directory concept yet
+    return None
+
+
+def _load_bundled_skill() -> str:
+    """Read the bundled imagen.md from the installed package.
+
+    Uses ``importlib.resources`` so it works whether the package is installed
+    from a wheel or in editable mode from ``src/``.
+    """
+    ref = _ir.files("codex_imagen._assets.skills").joinpath("imagen.md")
+    return ref.read_text(encoding="utf-8")
+
+
+def install_skill_for_client(
+    key: str, *, dry_run: bool = False
+) -> tuple[bool, str]:
+    """Install the bundled imagen skill for one client.
+
+    Returns ``(success, message)``. Idempotent — overwrites and reports
+    "updated" when the file already exists.
+    """
+    if key not in _DETECTORS:
+        return False, f"Unknown client key: {key!r}"
+
+    skill_path = _skill_path_for_client(key)
+    if skill_path is None:
+        return True, f"{key}: skill install not supported (no skill directory concept)"
+
+    if dry_run:
+        return True, f"[dry-run] {key}: would write skill to {skill_path}"
+
+    existed = skill_path.exists()
+
+    try:
+        content = _load_bundled_skill()
+    except Exception as exc:
+        return False, f"{key}: could not load bundled skill: {exc}"
+
+    try:
+        skill_path.parent.mkdir(parents=True, exist_ok=True)
+        skill_path.write_text(content, encoding="utf-8")
+    except OSError as exc:
+        return False, f"{key}: could not write skill to {skill_path}: {exc}"
+
+    if existed:
+        return True, f"{key}: skill updated at {skill_path}"
+    return True, f"{key}: skill installed at {skill_path}"
+
+
+def uninstall_skill_for_client(
+    key: str, *, dry_run: bool = False
+) -> tuple[bool, str]:
+    """Remove the bundled imagen skill for one client.
+
+    Returns ``(success, message)``. Idempotent — safe if file absent.
+    """
+    if key not in _DETECTORS:
+        return False, f"Unknown client key: {key!r}"
+
+    skill_path = _skill_path_for_client(key)
+    if skill_path is None:
+        return True, f"{key}: skill uninstall not applicable"
+
+    if not skill_path.exists():
+        return True, f"{key}: skill not installed (nothing to remove)"
+
+    if dry_run:
+        return True, f"[dry-run] {key}: would remove skill at {skill_path}"
+
+    try:
+        skill_path.unlink()
+        # Remove the parent dir only if it's now empty.
+        try:
+            skill_path.parent.rmdir()
+        except OSError:
+            pass  # Not empty — leave it.
+        return True, f"{key}: skill removed from {skill_path}"
+    except OSError as exc:
+        return False, f"{key}: could not remove skill at {skill_path}: {exc}"
+
+
+def skill_status_for_client(key: str) -> tuple[bool | None, Path | None]:
+    """Return ``(installed, path)`` for the skill of one client.
+
+    ``installed`` is ``True`` if the file exists, ``False`` if the path is
+    defined but missing, ``None`` if the client has no skill directory.
+    """
+    if key not in _DETECTORS:
+        return None, None
+    skill_path = _skill_path_for_client(key)
+    if skill_path is None:
+        return None, None
+    return skill_path.exists(), skill_path
