@@ -45,9 +45,9 @@ Three super-short examples, one per interface, all of them produce `./out/00.png
 ### SDK
 
 ```python
-from codex_imagen import forge
+from codex_imagen import imagen
 
-result = forge(prompt="a ceramic coffee mug, minimal hero shot")
+result = imagen(prompt="a ceramic coffee mug, minimal hero shot")
 print(result.images[0].path)
 ```
 
@@ -78,17 +78,17 @@ Then in Claude: *"Use codex-imagen to generate a hero image of a ceramic coffee 
 
 | Interface | Surface | Best for |
 |---|---|---|
-| **SDK** (`from codex_imagen import forge`) | `forge(**ForgeOptions)` → `ForgeResult` | Python scripts, notebooks, server code, custom pipelines |
+| **SDK** (`from codex_imagen import imagen`) | `imagen(**ImagenOptions)` → `ImagenResult` | Python scripts, notebooks, server code, custom pipelines |
 | **CLI** (`imagen ...`) | 25 flags, auto JSON-vs-pretty by TTY | Humans on the terminal, shell scripts, CI jobs, AI agents calling `subprocess` |
-| **MCP** (`codex-imagen-mcp`) | One `forge` tool over stdio | Claude Desktop, Cursor, any MCP-aware agent |
+| **MCP** (`codex-imagen-mcp`) | One `imagen` tool over stdio | Claude Desktop, Cursor, any MCP-aware agent |
 
-All three share the same dataclass — `ForgeOptions` — so a workflow built against one interface ports cleanly to the others.
+All three share the same dataclass — `ImagenOptions` — so a workflow built against one interface ports cleanly to the others.
 
 ---
 
 ## The five batch modes
 
-A `batch_mode` decides how prompts and outputs are arranged. `auto` is the default and almost always right; the value is recorded in the manifest and on `ForgeResult.batch_mode` for debuggability.
+A `batch_mode` decides how prompts and outputs are arranged. `auto` is the default and almost always right; the value is recorded in the manifest and on `ImagenResult.batch_mode` for debuggability.
 
 | Mode | Input shape | Output | Use it for |
 |---|---|---|---|
@@ -100,17 +100,17 @@ A `batch_mode` decides how prompts and outputs are arranged. `auto` is the defau
 
 ```python
 # parallel — three unrelated product shots
-forge(prompt=["a mug", "a notebook", "a pencil"], batch_mode="parallel")
+imagen(prompt=["a mug", "a notebook", "a pencil"], batch_mode="parallel")
 
 # variants — four takes on the same logo idea
-forge(prompt="abstract geometric logo", count=4, batch_mode="variants")
+imagen(prompt="abstract geometric logo", count=4, batch_mode="variants")
 
 # chain — a four-panel storyboard
-forge(prompt=["frame 1: dawn", "frame 2: noon", "frame 3: dusk", "frame 4: night"],
+imagen(prompt=["frame 1: dawn", "frame 2: noon", "frame 3: dusk", "frame 4: night"],
       batch_mode="chain")
 
 # branded-parallel — hero + sections all matching the anchor's style
-forge(prompt=["hero", "feature 1", "feature 2", "feature 3"],
+imagen(prompt=["hero", "feature 1", "feature 2", "feature 3"],
       anchor="warm beige editorial, soft serif headings",
       batch_mode="branded-parallel")
 ```
@@ -149,7 +149,7 @@ The Codex OAuth bridge silently rejects `background: "transparent"`. So instead 
 3. The raw opaque image is preserved as `<name>.raw.png` for debugging.
 
 ```python
-forge(
+imagen(
     prompt="a single red apple, isolated",
     transparent=True,
     chroma_tolerance=40,    # 0-100; raise if edges look chewed up
@@ -163,10 +163,10 @@ See [`examples/transparent_logo.md`](./examples/transparent_logo.md) for a full 
 
 ## Skills (Claude / Codex compatible)
 
-A "skill" here is just a markdown file. Point `forge` at one (or several) and the body is loaded, YAML frontmatter is stripped, and the content is merged into the prompt builder's `instructions=` block. This lets you reuse the exact same brand-kit / design-system / domain skill files that already live in `~/.claude/skills/<name>/SKILL.md` or `~/.codex/skills/<name>` directories.
+A "skill" here is just a markdown file. Point `imagen` at one (or several) and the body is loaded, YAML frontmatter is stripped, and the content is merged into the prompt builder's `instructions=` block. This lets you reuse the exact same brand-kit / design-system / domain skill files that already live in `~/.claude/skills/<name>/SKILL.md` or `~/.codex/skills/<name>` directories.
 
 ```python
-forge(
+imagen(
     prompt="hero shot for a fintech landing page",
     skills=[
         "~/.claude/skills/brandkit/SKILL.md",
@@ -175,7 +175,7 @@ forge(
 )
 ```
 
-Skills are silently ignored in `mode="raw"` (there's no instruction block to inject into — a warning is appended to `ForgeResult.warnings`).
+Skills are silently ignored in `mode="raw"` (there's no instruction block to inject into — a warning is appended to `ImagenResult.warnings`).
 
 ---
 
@@ -226,7 +226,7 @@ imagen "an abstract leaf logo" --transparent \
 
 ## MCP integration
 
-A single tool — `forge` — is exposed over stdio. Its JSON schema mirrors `ForgeOptions` field-for-field (a drift-pin test ensures it stays in sync). The tool description embedded in the schema teaches the model how to pick a `batch_mode`, when to use each reasoning mode, and how transparency / skills behave. The authoritative version of that guide lives at the top of [`src/codex_imagen/mcp_server.py`](./src/codex_imagen/mcp_server.py).
+A single tool — `imagen` — is exposed over stdio. Its JSON schema mirrors `ImagenOptions` field-for-field (a drift-pin test ensures it stays in sync). The tool description embedded in the schema teaches the model how to pick a `batch_mode`, when to use each reasoning mode, and how transparency / skills behave. The authoritative version of that guide lives at the top of [`src/codex_imagen/mcp_server.py`](./src/codex_imagen/mcp_server.py).
 
 ```jsonc
 // claude_desktop_config.json
@@ -239,13 +239,13 @@ A single tool — `forge` — is exposed over stdio. Its JSON schema mirrors `Fo
 }
 ```
 
-The tool result is a JSON payload of `ForgeResult` — the same shape `forge()` returns to the SDK, with `Path` values flattened to absolute strings. On failure (bad args, health failure, every call failed) the payload is still a normal MCP result with `{"ok": false, "error": "...", "error_type": "..."}` — never a protocol-level exception. Calling models can react to that shape and retry with different args.
+The tool result is a JSON payload of `ImagenResult` — the same shape `imagen()` returns to the SDK, with `Path` values flattened to absolute strings. On failure (bad args, health failure, every call failed) the payload is still a normal MCP result with `{"ok": false, "error": "...", "error_type": "..."}` — never a protocol-level exception. Calling models can react to that shape and retry with different args.
 
 ---
 
 ## Configuration reference
 
-[`SPEC.md`](./SPEC.md) is the authoritative reference for every field on `ForgeOptions`, the prompt-builder grammar, the size-validator rules, the chroma-key algorithm, and the manifest format. The README is the friendly intro; the SPEC is the contract.
+[`SPEC.md`](./SPEC.md) is the authoritative reference for every field on `ImagenOptions`, the prompt-builder grammar, the size-validator rules, the chroma-key algorithm, and the manifest format. The README is the friendly intro; the SPEC is the contract.
 
 ---
 
@@ -262,9 +262,9 @@ The package is intentionally small and layered. Each leaf module has one job:
 | `_skills.py` | File-path skill loader (handles `~`, strips YAML frontmatter, hashes invariants). |
 | `_modes.py` | Five batch modes — plans calls, executes via `ThreadPoolExecutor`, owns the chain reference logic. |
 | `_manifest.py` | One JSONL line per generated image, written to `<output_dir>/manifest.jsonl`. |
-| `core.py` | Public `ForgeOptions` / `ForgeResult` / `forge()` — orchestrates the modules above. |
+| `core.py` | Public `ImagenOptions` / `ImagenResult` / `imagen()` — orchestrates the modules above. |
 | `cli.py` | Click CLI with dual human / JSON output and TTY auto-detect. |
-| `mcp_server.py` | Stdio MCP server exposing a single `forge` tool. |
+| `mcp_server.py` | Stdio MCP server exposing a single `imagen` tool. |
 
 `core.py` is the only module that knows about the full pipeline; everything else is replaceable in isolation. Tests reach into the leaf modules directly and use a `fake_bridge` fixture to keep the suite hermetic.
 

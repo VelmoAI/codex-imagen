@@ -9,9 +9,9 @@ A four-panel sketch of a character's day. A before/after pair for a marketing co
 ## SDK
 
 ```python
-from codex_imagen import forge
+from codex_imagen import imagen
 
-result = forge(
+result = imagen(
     prompt=[
         "frame 1: a red-haired woman waking up in a sunlit loft, "
         "soft morning light, cozy interior, illustrative storybook style",

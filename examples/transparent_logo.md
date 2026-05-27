@@ -8,7 +8,7 @@ A logo, an icon, a product cutout, a sticker — anything that needs to drop ont
 
 ## How it works (3 steps)
 
-1. `forge` prepends a chroma-key instruction block to `instructions=`, asking the model to place the subject on a solid `#FF00FF` (magenta) backdrop with no shadows touching the edges.
+1. `imagen` prepends a chroma-key instruction block to `instructions=`, asking the model to place the subject on a solid `#FF00FF` (magenta) backdrop with no shadows touching the edges.
 2. The bridge generates normally with `background="opaque"` (forced — the bridge refuses `"transparent"`).
 3. `_chroma.keyout()` runs in Pillow: every pixel close to magenta becomes transparent, the subject's edges are despilled (the magenta tint is subtracted from RGB fringes), and the alpha edges are softly feathered for a clean cutout.
 
@@ -17,9 +17,9 @@ The raw opaque PNG is preserved as `<name>.raw.png` next to the keyed PNG so you
 ## SDK
 
 ```python
-from codex_imagen import forge
+from codex_imagen import imagen
 
-result = forge(
+result = imagen(
     prompt="an abstract leaf logo, simple geometric shapes, single-color "
            "deep green, centered on the canvas, no background elements, "
            "no drop shadow",
@@ -74,7 +74,7 @@ Drop `00.png` onto a dark background, a photograph, anywhere — the alpha is cl
 If your logo is itself pink/magenta-adjacent, switch the chroma key to a color the subject definitely doesn't use:
 
 ```python
-forge(
+imagen(
     prompt="a hot pink stylized heart icon",
     transparent=True,
     chroma_key="#00FF00",          # bright green instead of magenta

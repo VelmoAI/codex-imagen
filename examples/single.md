@@ -9,9 +9,9 @@ You want a single hero shot — a product image for a landing page, a placeholde
 ## SDK
 
 ```python
-from codex_imagen import forge
+from codex_imagen import imagen
 
-result = forge(
+result = imagen(
     prompt="a ceramic coffee mug, top-down hero shot on warm beige paper, "
            "soft morning light, minimalist editorial style",
     output_dir="./out/coffee",
@@ -47,13 +47,13 @@ imagen "a ceramic coffee mug, top-down hero shot ..." \
 ./out/coffee/manifest.jsonl    # one JSONL line with the run metadata
 ```
 
-The manifest line records `mode`, `batch_mode`, `size`, the final prompt sent to the bridge, the response/call IDs, and elapsed milliseconds. It is append-only — you can re-run `forge` against the same directory and every call lands as a new line.
+The manifest line records `mode`, `batch_mode`, `size`, the final prompt sent to the bridge, the response/call IDs, and elapsed milliseconds. It is append-only — you can re-run `imagen` against the same directory and every call lands as a new line.
 
 ## When to use `single`
 
 - One image, no narrative or set membership.
 - Quick one-off generation from a script.
-- Smoke-testing your install (`forge --health` then this).
+- Smoke-testing your install (`imagen --health` then this).
 
 ## When to switch to another mode
 

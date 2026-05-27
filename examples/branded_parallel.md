@@ -25,9 +25,9 @@ prompts: [hero,   feature_1, feature_2, feature_3, feature_4]
 ## SDK — implicit anchor (prompt[0])
 
 ```python
-from codex_imagen import forge
+from codex_imagen import imagen
 
-result = forge(
+result = imagen(
     prompt=[
         "hero shot: a serene zen-garden workspace with a single laptop, "
         "warm beige editorial photography, soft serif headings vibe, "
@@ -51,7 +51,7 @@ result = forge(
 When you want the anchor to be a *style brief* rather than its own deliverable image, pass `anchor=`:
 
 ```python
-result = forge(
+result = imagen(
     prompt=[
         "section 1: hero with a coffee mug",
         "section 2: feature with a notebook",
@@ -111,7 +111,7 @@ Wall-clock time is roughly `(1 + N/parallel)` calls. With `parallel=3` and four 
 Branded-parallel is the mode where skill files earn their keep. A `brandkit/SKILL.md` that defines palette, typography, photography style, and mood gets folded into the anchor's instructions *and* every follower's instructions. The anchor produces the canonical-looking image, the followers stay locked to it both via the reference image and via the skill body.
 
 ```python
-forge(
+imagen(
     prompt=["hero", "feature 1", "feature 2", "feature 3"],
     anchor="warm beige editorial, soft serif headings, lots of whitespace",
     skills=["./brand/SKILL.md", "./voice/SKILL.md"],

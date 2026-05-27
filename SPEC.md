@@ -12,9 +12,9 @@ generation bridge** (`gpt-image-2` via `https://chatgpt.com/backend-api/codex/re
 Uses the user's ChatGPT subscription quota — no `OPENAI_API_KEY` required.
 
 Three interfaces, one engine:
-1. **Python SDK** — `from codex_imagen import forge; forge(...)`
+1. **Python SDK** — `from codex_imagen import imagen; imagen(...)`
 2. **CLI** — `imagen ...` (works for both humans and AI agents)
-3. **MCP server** — single `forge` tool, stdio
+3. **MCP server** — single `imagen` tool, stdio
 
 ---
 
@@ -57,7 +57,7 @@ codex-imagen/
 ├── README.md
 ├── SPEC.md                  # this file
 ├── src/codex_imagen/
-│   ├── __init__.py          # public SDK exports: forge, ForgeOptions, ForgeResult, ...
+│   ├── __init__.py          # public SDK exports: imagen, ImagenOptions, ImagenResult, ...
 │   ├── _bridge.py           # thin wrapper around codex_image_gen.generate_image()
 │   ├── _prompts.py          # Codex labeled-spec builder, raw-passthrough, instructions merge
 │   ├── _size.py             # size validator + nearest-legal suggestion
@@ -65,9 +65,9 @@ codex-imagen/
 │   ├── _skills.py           # file-path skill loader (markdown bodies)
 │   ├── _modes.py            # single | parallel | variants | chain | branded-parallel
 │   ├── _manifest.py         # JSONL run logger
-│   ├── core.py              # forge() public entry point + ForgeOptions/Result dataclasses
+│   ├── core.py              # imagen() public entry point + ImagenOptions/Result dataclasses
 │   ├── cli.py               # click CLI, dual-mode: human (pretty) / agent (--json)
-│   └── mcp_server.py        # stdio MCP server, single `forge` tool
+│   └── mcp_server.py        # stdio MCP server, single `imagen` tool
 ├── tests/
 │   ├── conftest.py
 │   ├── test_prompts.py
@@ -101,16 +101,16 @@ codex-imagen/
 ## Public API (Python SDK)
 
 ```python
-from codex_imagen import forge, ForgeOptions
+from codex_imagen import imagen, ImagenOptions
 
-result = forge(
+result = imagen(
     prompt="a minimalist hero image of a ceramic coffee mug",
     output_dir="./out",
     # one-liner using all defaults — produces ./out/00.png
 )
 
 # Power use
-result = forge(
+result = imagen(
     prompt=["section 1: hero", "section 2: features", "section 3: cta"],
     batch_mode="branded-parallel",
     anchor="warm beige editorial design, soft serif headings, lots of whitespace",
@@ -124,11 +124,11 @@ result = forge(
 )
 ```
 
-### `ForgeOptions` dataclass (frozen)
+### `ImagenOptions` dataclass (frozen)
 
 ```python
 @dataclass(frozen=True)
-class ForgeOptions:
+class ImagenOptions:
     # --- CORE INPUT ---
     prompt: str | list[str] | dict | list[dict]   # str/dict OR list for multi-image
     output_dir: str | Path = "./out"
@@ -172,11 +172,11 @@ class ForgeOptions:
                                         #   model, background, auth_file, oauth_base_url
 ```
 
-### `ForgeResult` dataclass
+### `ImagenResult` dataclass
 
 ```python
 @dataclass(frozen=True)
-class ForgeImage:
+class ImagenImage:
     index: int
     path: Path
     bytes: int
@@ -191,7 +191,7 @@ class ForgeImage:
     raw_png_path: Path | None       # if transparent: original opaque PNG before chroma
 
 @dataclass(frozen=True)
-class ForgeHealth:
+class ImagenHealth:
     ok: bool
     codex_image_gen_available: bool
     pillow_available: bool
@@ -200,30 +200,30 @@ class ForgeHealth:
     hint: str | None                # actionable message if not ok
 
 @dataclass(frozen=True)
-class ForgeResult:
+class ImagenResult:
     ok: bool                        # false if health failed before generation
     mode: str
     batch_mode: str
-    images: list[ForgeImage]        # empty if ok=False
+    images: list[ImagenImage]       # empty if ok=False
     manifest_path: Path | None
     elapsed_ms: int
-    health: ForgeHealth             # ALWAYS populated
+    health: ImagenHealth            # ALWAYS populated
     error: str | None               # if ok=False
     warnings: list[str]             # non-fatal (e.g. "skills ignored in raw mode")
 ```
 
-### `forge()` entry point
+### `imagen()` entry point
 
 ```python
-def forge(**kwargs) -> ForgeResult:
+def imagen(**kwargs) -> ImagenResult:
     """Single entry point for all generation modes.
     
-    See ForgeOptions for all kwargs.
+    See ImagenOptions for all kwargs.
     
-    Returns ForgeResult with ok flag. On health failure returns ok=False
+    Returns ImagenResult with ok flag. On health failure returns ok=False
     with an actionable hint rather than raising.
     """
-    options = ForgeOptions(**kwargs)
+    options = ImagenOptions(**kwargs)
     return _run(options)
 ```
 
@@ -250,7 +250,7 @@ Constraints: <must keep/must avoid>
 Avoid: <negative constraints>
 ```
 
-### Mode → `instructions=` built by forge
+### Mode → `instructions=` built by imagen
 
 **`raw` mode** — anti-refinement passthrough:
 ```
@@ -341,7 +341,7 @@ def keyout(
     """
 ```
 
-The forge orchestrator, when `transparent=True`:
+The imagen orchestrator, when `transparent=True`:
 1. Prepend chroma-key instruction to `instructions=` (so the model renders on solid magenta)
 2. Generate normally with `background="opaque"` (forced)
 3. Save raw PNG as `<name>.raw.png` for debugging
@@ -371,13 +371,13 @@ Used by `_prompts.py` to merge skill content into `instructions=`.
 
 ## Modes (`_modes.py`)
 
-Five batch modes. Each takes `ForgeOptions` and a callable bridge function.
+Five batch modes. Each takes `ImagenOptions` and a callable bridge function.
 
 | Mode | Behavior |
 |---|---|
 | `single` | one prompt → one image |
 | `parallel` | N prompts → N independent images, ThreadPoolExecutor(max_workers=parallel) |
-| `variants` | 1 prompt + count=N → N parallel calls of SAME prompt. forge adds subtle variation hints to each (alt angle, lighting, composition) so they actually differ |
+| `variants` | 1 prompt + count=N → N parallel calls of SAME prompt. imagen adds subtle variation hints to each (alt angle, lighting, composition) so they actually differ |
 | `chain` | N prompts → sequential. Each call's references include prior images per chain_mode |
 | `branded-parallel` | 1 anchor (prompt 0 or explicit `anchor`) generated first → other N-1 prompts in parallel, each with anchor image as reference |
 
@@ -390,7 +390,7 @@ Auto-detection of `batch_mode="auto"`:
 
 ### Variation hints (for `variants` mode)
 
-forge appends a different hint to each variant's instructions:
+imagen appends a different hint to each variant's instructions:
 - variant 1: "interpret freely — establish the baseline"
 - variant 2: "vary the composition or angle"
 - variant 3: "vary the lighting or mood"
@@ -434,7 +434,7 @@ JSONL log per run at `<output_dir>/manifest.jsonl`. One line per generated image
 
 ## CLI (`cli.py`)
 
-Single command `forge`. Two output modes:
+Single command `imagen`. Two output modes:
 - **Default (human)** — pretty colored output, progress bars, tables
 - **`--json` (agent)** — structured JSON to stdout, no decoration
 
@@ -464,7 +464,7 @@ imagen --health
 imagen -f frames.txt --batch-mode chain --var char="red-haired woman"
 ```
 
-Flags map 1:1 to ForgeOptions fields.
+Flags map 1:1 to ImagenOptions fields.
 
 ### Dual-mode UX (2026 style)
 
@@ -479,12 +479,12 @@ Flags map 1:1 to ForgeOptions fields.
 
 ## MCP Server (`mcp_server.py`)
 
-Stdio. One tool: `forge`. Full ForgeOptions surface as JSON schema.
+Stdio. One tool: `imagen`. Full ImagenOptions surface as JSON schema.
 
 The tool description embedded in the schema teaches the AI how to choose modes:
 
 ```
-forge — Codex image generator. Generate, batch, chain, or branded sets of images.
+imagen — Codex image generator. Generate, batch, chain, or branded sets of images.
 
 PROMPT: string for single image, dict for structured Codex labeled-spec,
         or array of either for multiple images.
@@ -505,10 +505,10 @@ REASONING MODE (controls how aggressively gpt-5.5 polishes prompt):
 TRANSPARENCY: set transparent=true to get PNG with alpha via chroma-key pipeline.
               (Native transparent background is not available via Codex OAuth.)
 
-SKILLS: pass file paths to .md skill files. forge reads them and merges into
+SKILLS: pass file paths to .md skill files. imagen reads them and merges into
         instructions. Works with Claude/Codex skill files directly.
 
-Returns ForgeResult JSON with ok flag, images list, manifest path, health.
+Returns ImagenResult JSON with ok flag, images list, manifest path, health.
 On failure: ok=false + hint instead of crashing.
 ```
 
@@ -516,11 +516,11 @@ On failure: ok=false + hint instead of crashing.
 
 ## Health-Check (inline)
 
-Run at start of every `forge()` call:
+Run at start of every `imagen()` call:
 - Check `codex_image_gen` importable
 - Check Pillow importable (only if transparent or chroma needed — soft-fail)
 - Check `~/.codex/auth.json` exists and parses as JSON with token fields
-- If any hard-fail → return `ForgeResult(ok=False, health=..., hint="codex login required")`
+- If any hard-fail → return `ImagenResult(ok=False, health=..., hint="codex login required")`
   WITHOUT making any API call.
 
 ---
@@ -559,7 +559,7 @@ Run at start of every `forge()` call:
 6. `_skills.py` — file loader + hash
 7. `_manifest.py` — JSONL logger
 8. `_modes.py` — 5 modes
-9. `core.py` — ForgeOptions / ForgeResult / forge() entry + health
+9. `core.py` — ImagenOptions / ImagenResult / imagen() entry + health
 10. `cli.py` — Click CLI with dual-mode output
 11. `mcp_server.py` — stdio MCP
 12. Tests + Examples

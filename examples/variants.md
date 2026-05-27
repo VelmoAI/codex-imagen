@@ -9,9 +9,9 @@ You're exploring art direction for a logo, a hero illustration, or a product moo
 ## SDK
 
 ```python
-from codex_imagen import forge
+from codex_imagen import imagen
 
-result = forge(
+result = imagen(
     prompt="an abstract geometric logo for a fintech startup, minimal, "
            "single-color, suitable for both light and dark backgrounds",
     batch_mode="variants",
@@ -49,7 +49,7 @@ single-color, suitable for both light and dark backgrounds" \
 
 ## What the variation hints look like
 
-`forge` appends one differentiation hint per variant to the prompt builder's `instructions=` block. The pattern (cycling on `count > 4`) is:
+`imagen` appends one differentiation hint per variant to the prompt builder's `instructions=` block. The pattern (cycling on `count > 4`) is:
 
 | Variant index | Appended hint |
 |---|---|

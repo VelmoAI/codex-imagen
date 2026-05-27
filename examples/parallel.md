@@ -9,9 +9,9 @@ You're building a small content set for a marketing email and you need three pro
 ## SDK
 
 ```python
-from codex_imagen import forge
+from codex_imagen import imagen
 
-result = forge(
+result = imagen(
     prompt=[
         "a ceramic coffee mug, top-down hero shot, warm morning light",
         "a leather-bound notebook lying open on a wooden desk, golden hour",
@@ -61,7 +61,7 @@ Order in the output directory matches the order of prompts in the list/file. The
 
 ## Tuning `parallel`
 
-`parallel` is the max number of concurrent bridge calls. Default is `2`. For three prompts with `parallel=3` the wall-clock time is roughly one call's worth. For three prompts with `parallel=1` it's three calls' worth (effectively sequential). Raise it when you have CPU/network headroom and lower it if you start seeing rate-limit warnings in `ForgeResult.warnings`.
+`parallel` is the max number of concurrent bridge calls. Default is `2`. For three prompts with `parallel=3` the wall-clock time is roughly one call's worth. For three prompts with `parallel=1` it's three calls' worth (effectively sequential). Raise it when you have CPU/network headroom and lower it if you start seeing rate-limit warnings in `ImagenResult.warnings`.
 
 ## When to use `parallel`
 
