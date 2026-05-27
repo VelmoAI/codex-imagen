@@ -43,6 +43,9 @@ import json
 import os
 import time
 import urllib.error
+import warnings as _warnings_mod
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeout
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -471,6 +474,7 @@ def generate(
     retry_delay_seconds: float = 2.0,
     save_partials: bool = False,
     extra: dict[str, Any] | None = None,
+    wall_clock_timeout: float = 240.0,
 ) -> BridgeResult:
     """Generate one image, persist it to disk, return metadata.
 
@@ -511,6 +515,22 @@ def generate(
         extra: Power-user escape hatch. Merged into the library kwargs
             verbatim (overrides anything we set). Use for keys like
             ``oauth_base_url`` or ``auth_file``.
+        wall_clock_timeout: Maximum wall-clock seconds for one attempt.
+            Defaults to 240s — typical successful calls finish in 20-100s,
+            mode=medium with skills can take 60-180s, anything beyond
+            suggests a stuck SSE stream.  The Codex upstream library uses
+            ``urllib.urlopen(req, timeout=300).read()`` which is a
+            per-socket-recv timeout, NOT a total wall-clock cap; a server
+            sending keep-alive heartbeats can hold the connection open
+            indefinitely.  This parameter adds a hard wall-clock cap via
+            ``concurrent.futures.ThreadPoolExecutor.submit(...).result(timeout=N)``.
+
+            Known trade-off: when the timeout fires the underlying urllib
+            thread is still running in the background until the OS closes
+            the socket.  The ThreadPoolExecutor object is destroyed at the
+            end of the ``with`` block, but the thread itself lingers until
+            urllib gives up.  This is acceptable because the thread holds
+            no resources beyond an outbound HTTP connection.
 
     Returns:
         A :class:`BridgeResult` dataclass with the fields documented in the
@@ -585,8 +605,41 @@ def generate(
     started_at = time.monotonic()
     for attempt in range(max_retries + 1):
         try:
-            result = codex_image_gen.generate_image(prompt, **lib_kwargs)
+            # Wrap the upstream call in a ThreadPoolExecutor so we can
+            # impose a hard wall-clock cap.  The upstream library uses
+            # urllib.urlopen(..., timeout=300).read() where 300 is a
+            # per-socket-recv timeout, NOT a total cap.  A server that
+            # slow-streams SSE heartbeats can hold the connection open
+            # indefinitely.  future.result(timeout=N) gives us the hard
+            # wall-clock limit we need.
+            #
+            # Thread-leak note: when FuturesTimeout fires, the urllib
+            # thread continues running until the OS closes the TCP
+            # connection.  We call pool.shutdown(wait=False) to avoid
+            # blocking on the still-running thread.  The executor object
+            # goes out of scope; the thread is a known, acceptable
+            # trade-off documented in the generate() docstring.
+            pool = ThreadPoolExecutor(max_workers=1)
+            try:
+                future = pool.submit(
+                    codex_image_gen.generate_image, prompt, **lib_kwargs
+                )
+                try:
+                    result = future.result(timeout=wall_clock_timeout)
+                except FuturesTimeout:
+                    pool.shutdown(wait=False)
+                    raise BridgeError(
+                        f"Bridge call exceeded wall-clock timeout of "
+                        f"{wall_clock_timeout}s. "
+                        "The Codex SSE stream did not deliver a final "
+                        "image in time. "
+                        "Consider mode='raw' for faster turnaround, or retry."
+                    )
+            finally:
+                pool.shutdown(wait=False)
             break
+        except BridgeError:
+            raise
         except Exception as exc:  # noqa: BLE001
             if attempt >= max_retries or not _is_transient(exc):
                 raise BridgeError(
@@ -597,6 +650,16 @@ def generate(
 
     if not result.images:
         raise BridgeError("Codex bridge returned no images")
+
+    # Variance warning: flag unexpectedly slow calls so callers know
+    # something unusual happened even when the call eventually succeeded.
+    elapsed_so_far_ms = int((time.monotonic() - started_at) * 1000)
+    if elapsed_so_far_ms > 180_000:
+        warnings.append(
+            f"call took {elapsed_so_far_ms / 1000:.0f}s "
+            "(typical: 20-100s, mode=medium: 60-180s). "
+            "Consider mode='raw' for faster, more predictable turnaround."
+        )
 
     primary = result.images[0]
 

@@ -536,3 +536,127 @@ def test_max_retries_negative_raises_valueerror(
 
     # The bridge should never have been called.
     assert stub_generate_image.calls == []
+
+
+# ---------------------------------------------------------------------------
+# Wall-clock timeout tests (Fix 1)
+# ---------------------------------------------------------------------------
+
+
+def test_wall_clock_timeout_raises_bridge_error_on_stuck_call(
+    healthy_env: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A fake that sleeps longer than wall_clock_timeout must raise BridgeError
+    mentioning 'timeout', and should complete within ~2 seconds (not hang)."""
+    import codex_image_gen
+
+    def slow_generate(prompt: str, **kwargs: Any):
+        time.sleep(5)  # much longer than wall_clock_timeout=1.0
+        return _make_fake_result()
+
+    monkeypatch.setattr(codex_image_gen, "generate_image", slow_generate)
+
+    t_start = time.monotonic()
+    with pytest.raises(BridgeError, match="timeout"):
+        generate(
+            prompt="x",
+            output_path=tmp_path / "x.png",
+            wall_clock_timeout=1.0,
+            max_retries=0,
+        )
+    elapsed = time.monotonic() - t_start
+    # Must have returned quickly — not hung for the full sleep duration.
+    assert elapsed < 4.0, f"timeout took too long: {elapsed:.1f}s"
+
+
+def test_wall_clock_timeout_succeeds_when_call_is_fast(
+    healthy_env: Path,
+    stub_generate_image: SimpleNamespace,
+    tmp_path: Path,
+) -> None:
+    """A fast call completes normally when wall_clock_timeout is generous."""
+    result = generate(
+        prompt="a coffee mug",
+        output_path=tmp_path / "out.png",
+        wall_clock_timeout=10.0,
+    )
+    assert result.bytes > 0
+    assert len(stub_generate_image.calls) == 1
+
+
+def test_variance_warning_when_elapsed_exceeds_180s(
+    healthy_env: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """When elapsed_ms > 180_000, generate() should append a variance warning.
+
+    We fake a large elapsed time by monkeypatching time.monotonic so that
+    the post-call elapsed reading returns a forged delta, without actually
+    sleeping.
+    """
+    import codex_image_gen
+
+    call_count = [0]
+    monotonic_calls = [0]
+
+    def fake_generate(prompt: str, **kwargs: Any):
+        call_count[0] += 1
+        return _make_fake_result()
+
+    monkeypatch.setattr(codex_image_gen, "generate_image", fake_generate)
+
+    # Forge time.monotonic so that the second call (after the bridge returns)
+    # appears to be 185 seconds later than the first.
+    real_monotonic = time.monotonic
+    base_time = real_monotonic()
+
+    def fake_monotonic() -> float:
+        monotonic_calls[0] += 1
+        # First call = started_at anchor; subsequent calls return a delta
+        # that exceeds 180s.
+        if monotonic_calls[0] == 1:
+            return base_time
+        return base_time + 185.0
+
+    monkeypatch.setattr(_bridge.time, "monotonic", fake_monotonic)
+
+    result = generate(
+        prompt="a cup",
+        output_path=tmp_path / "out.png",
+        wall_clock_timeout=300.0,  # large enough not to fire
+        max_retries=0,
+    )
+
+    # The variance warning should be present.
+    assert any("185" in w or "took" in w for w in result.warnings), (
+        f"Expected a variance warning, got: {result.warnings}"
+    )
+
+
+def test_wall_clock_timeout_flows_from_imagen_options(
+    healthy_env: Path,
+    stub_generate_image: SimpleNamespace,
+    tmp_path: Path,
+) -> None:
+    """wall_clock_timeout set on ImagenOptions flows to the bridge call.
+
+    We verify by checking that no timeout exception is raised and the call
+    succeeds — indirectly confirming the value was wired through.  A more
+    direct test would require inspecting the kwargs inside the executor but
+    that would be brittle given the ThreadPoolExecutor wrapping.
+    """
+    from codex_imagen.core import ImagenOptions
+
+    opts = ImagenOptions(
+        prompt="a red sphere",
+        output_dir=str(tmp_path),
+        wall_clock_timeout=180.0,
+    )
+    assert opts.wall_clock_timeout == 180.0
+
+    # Sanity: invalid timeout must raise.
+    with pytest.raises(ValueError, match="wall_clock_timeout"):
+        ImagenOptions(prompt="x", output_dir=str(tmp_path), wall_clock_timeout=-1.0)

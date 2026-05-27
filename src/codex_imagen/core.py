@@ -169,6 +169,7 @@ class ImagenOptions:
     chroma_key: str = "#FF00FF"
     chroma_tolerance: int = 40
     chroma_despill: bool = True
+    chroma_edge_erode_px: int = 1
 
     # --- ENHANCEMENT ---
     enhance_prompt: bool = False
@@ -176,6 +177,7 @@ class ImagenOptions:
 
     # --- ORCHESTRATION ---
     parallel: int = 2
+    wall_clock_timeout: float = 240.0
 
     # --- ADVANCED ESCAPE HATCH ---
     advanced: dict[str, Any] = field(default_factory=dict)
@@ -207,6 +209,15 @@ class ImagenOptions:
         if not (0 <= self.chroma_tolerance <= 100):
             raise ValueError(
                 f"chroma_tolerance must be in 0..100, got {self.chroma_tolerance}"
+            )
+        if not isinstance(self.chroma_edge_erode_px, int) or self.chroma_edge_erode_px < 0:
+            raise ValueError(
+                f"chroma_edge_erode_px must be a non-negative int, "
+                f"got {self.chroma_edge_erode_px!r}"
+            )
+        if self.wall_clock_timeout <= 0:
+            raise ValueError(
+                f"wall_clock_timeout must be > 0, got {self.wall_clock_timeout}"
             )
 
         # Normalize collection inputs. Frozen dataclass: bypass setattr
@@ -552,11 +563,13 @@ def _run(options: ImagenOptions) -> ImagenResult:
         chroma_tolerance=options.chroma_tolerance,
         chroma_despill=options.chroma_despill,
         chroma_feather_px=2,
+        chroma_edge_erode_px=options.chroma_edge_erode_px,
         skills_body=skills_body,
         mode_param=options.mode,
         extra_instructions=options.extra_instructions,
         vars=options.vars or None,
         advanced=advanced,
+        wall_clock_timeout=options.wall_clock_timeout,
     )
 
     # ---- 9) Aggregate results & write manifest. -------------------------

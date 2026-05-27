@@ -768,12 +768,14 @@ class _CallContext:
     chroma_tolerance: int
     chroma_despill: bool
     chroma_feather_px: int
+    chroma_edge_erode_px: int
     skills_body: str
     mode_param: str
     extra_instructions: str | None
     vars: dict[str, str] | None
     advanced: dict[str, Any]
     output_format: str
+    wall_clock_timeout: float
 
 
 def _merge_extra_instructions(
@@ -874,6 +876,7 @@ def _run_one_call(ctx: _CallContext) -> dict[str, Any]:
             references=references_list if references_list else None,
             instructions=instructions,
             output_format=ctx.output_format,
+            wall_clock_timeout=ctx.wall_clock_timeout,
             **ctx.advanced,
         )
     except Exception as exc:  # noqa: BLE001
@@ -940,6 +943,7 @@ def _run_one_call(ctx: _CallContext) -> dict[str, Any]:
                     tolerance=ctx.chroma_tolerance,
                     despill=ctx.chroma_despill,
                     feather_px=ctx.chroma_feather_px,
+                    edge_erode_px=ctx.chroma_edge_erode_px,
                 )
             except Exception as exc:  # noqa: BLE001
                 return _error_result(
@@ -1053,11 +1057,13 @@ def execute_plan(
     chroma_tolerance: int = 40,
     chroma_despill: bool = True,
     chroma_feather_px: int = 2,
+    chroma_edge_erode_px: int = 1,
     skills_body: str = "",
     mode_param: str = "auto",
     extra_instructions: str | None = None,
     vars: dict[str, str] | None = None,
     advanced: dict[str, Any] | None = None,
+    wall_clock_timeout: float = 240.0,
 ) -> list[dict[str, Any]]:
     """Execute a :class:`ModePlan` and return per-call result dicts.
 
@@ -1116,12 +1122,14 @@ def execute_plan(
             chroma_tolerance=chroma_tolerance,
             chroma_despill=chroma_despill,
             chroma_feather_px=chroma_feather_px,
+            chroma_edge_erode_px=chroma_edge_erode_px,
             skills_body=skills_body,
             mode_param=mode_param,
             extra_instructions=extra_instructions,
             vars=vars,
             advanced=advanced,
             output_format=_format_for_output(call.output_path),
+            wall_clock_timeout=wall_clock_timeout,
         )
 
     mode = plan.mode

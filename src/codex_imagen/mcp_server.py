@@ -244,6 +244,15 @@ TOOL_INPUT_SCHEMA: dict[str, Any] = {
             "type": "boolean",
             "default": True,
         },
+        "chroma_edge_erode_px": {
+            "description": (
+                "Pixels to erode the alpha mask before feathering. Eliminates "
+                "pink fringe on soft subject edges. 0 disables; default 1."
+            ),
+            "type": "integer",
+            "minimum": 0,
+            "default": 1,
+        },
         "enhance_prompt": {
             "description": (
                 "Ask the prompt builder for an extra polish pass. Costs "
@@ -265,6 +274,15 @@ TOOL_INPUT_SCHEMA: dict[str, Any] = {
             "type": "integer",
             "minimum": 1,
             "default": 2,
+        },
+        "wall_clock_timeout": {
+            "description": (
+                "Maximum wall-clock seconds for one generation attempt. "
+                "Guards against unbounded SSE stream blocks. Default 240s."
+            ),
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "default": 240.0,
         },
         "advanced": {
             "description": (

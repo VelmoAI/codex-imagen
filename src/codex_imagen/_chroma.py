@@ -215,6 +215,7 @@ def _validate_inputs(
     key_rgb: tuple[int, int, int],
     tolerance: int,
     feather_px: int,
+    edge_erode_px: int = 0,
 ) -> None:
     """Validate the public ``keyout`` parameters in one place."""
 
@@ -231,6 +232,10 @@ def _validate_inputs(
         raise ValueError(
             f"feather_px must be a non-negative int, got {feather_px!r}"
         )
+    if not isinstance(edge_erode_px, int) or edge_erode_px < 0:
+        raise ValueError(
+            f"edge_erode_px must be a non-negative int, got {edge_erode_px!r}"
+        )
 
 
 def keyout(
@@ -241,6 +246,7 @@ def keyout(
     tolerance: int = DEFAULT_TOLERANCE,
     despill: bool = True,
     feather_px: int = DEFAULT_FEATHER_PX,
+    edge_erode_px: int = 1,
 ) -> ChromaResult:
     """Replace the key color in ``src_path`` with transparency and save as PNG.
 
@@ -254,22 +260,32 @@ def keyout(
             magenta backdrops on synthetic AI imagery.
         despill: If ``True``, reduce residual key-color tint on subject edges
             by subtracting the key-color projection from partial-alpha pixels.
+            The despill is applied aggressively: for partial-alpha pixels the
+            full projection onto the key-color vector is subtracted (not
+            scaled by ``1 - alpha/255``), which eliminates residual pink
+            halos on soft subject edges.
         feather_px: Gaussian-blur radius applied to the alpha channel only,
             in pixels. ``0`` disables feathering and yields a strictly
             binary cutout.
+        edge_erode_px: Number of pixels to erode the alpha mask before
+            feathering.  Erosion bites into fringe pixels so the subsequent
+            Gaussian feather doesn't reintroduce pink halos.  Default ``1``
+            (a 3x3 min-filter pass).  Set to ``0`` to disable for
+            back-compatibility.
 
     Returns:
         A :class:`ChromaResult` with file paths and pixel statistics.
 
     Raises:
         ValueError: If ``tolerance`` is out of ``0-100`` or any ``key_rgb``
-            component is out of ``0-255``, or ``feather_px`` is negative.
+            component is out of ``0-255``, or ``feather_px`` / ``edge_erode_px``
+            is negative.
         FileNotFoundError: If ``src_path`` does not exist.
         OSError: If Pillow cannot decode the source image.
         ImportError: If Pillow is not installed.
     """
 
-    _validate_inputs(key_rgb, tolerance, feather_px)
+    _validate_inputs(key_rgb, tolerance, feather_px, edge_erode_px)
 
     src_path = Path(src_path)
     dst_path = Path(dst_path)
@@ -292,6 +308,7 @@ def keyout(
         tolerance=tolerance,
         despill=despill,
         feather_px=feather_px,
+        edge_erode_px=edge_erode_px,
         Image=Image,
         ImageFilter=ImageFilter,
     )
@@ -324,6 +341,7 @@ def keyout_bytes(
     tolerance: int = DEFAULT_TOLERANCE,
     despill: bool = True,
     feather_px: int = DEFAULT_FEATHER_PX,
+    edge_erode_px: int = 1,
 ) -> bytes:
     """Run the chroma-key pipeline on in-memory bytes.
 
@@ -336,6 +354,7 @@ def keyout_bytes(
         tolerance: See :func:`keyout`.
         despill: See :func:`keyout`.
         feather_px: See :func:`keyout`.
+        edge_erode_px: See :func:`keyout`.
 
     Returns:
         Encoded PNG bytes with an RGBA alpha channel.
@@ -346,7 +365,7 @@ def keyout_bytes(
         ImportError: If Pillow is not installed.
     """
 
-    _validate_inputs(key_rgb, tolerance, feather_px)
+    _validate_inputs(key_rgb, tolerance, feather_px, edge_erode_px)
 
     Image, ImageFilter = _import_pillow()
 
@@ -359,6 +378,7 @@ def keyout_bytes(
         tolerance=tolerance,
         despill=despill,
         feather_px=feather_px,
+        edge_erode_px=edge_erode_px,
         Image=Image,
         ImageFilter=ImageFilter,
     )
@@ -402,6 +422,7 @@ def _compute_rgba(
     tolerance: int,
     despill: bool,
     feather_px: int,
+    edge_erode_px: int = 0,
     Image,  # type: ignore[no-untyped-def]
     ImageFilter,  # type: ignore[no-untyped-def]
 ) -> tuple[PILImage, bool]:
@@ -420,6 +441,7 @@ def _compute_rgba(
             tolerance=tolerance,
             despill=despill,
             feather_px=feather_px,
+            edge_erode_px=edge_erode_px,
             np=np,
             Image=Image,
             ImageFilter=ImageFilter,
@@ -430,6 +452,7 @@ def _compute_rgba(
         tolerance=tolerance,
         despill=despill,
         feather_px=feather_px,
+        edge_erode_px=edge_erode_px,
         Image=Image,
         ImageFilter=ImageFilter,
     )
@@ -447,6 +470,7 @@ def _compute_rgba_numpy(
     tolerance: int,
     despill: bool,
     feather_px: int,
+    edge_erode_px: int = 0,
     np,  # type: ignore[no-untyped-def]
     Image,  # type: ignore[no-untyped-def]
     ImageFilter,  # type: ignore[no-untyped-def]
@@ -477,41 +501,52 @@ def _compute_rgba_numpy(
         ramp = np.clip(ramp, 0.0, 1.0)
         alpha_f = ramp * 255.0
 
-    # Despill: subtract the key-color projection from partial-alpha pixels.
-    # For each such pixel p with normalized key direction k_hat,
-    #   projection = (p . k_hat) * k_hat
-    # We subtract that projection scaled by (1 - alpha/255) so fully-opaque
-    # pixels are untouched, fully-keyed pixels are about to be invisible
-    # anyway, and the transition band gets de-tinted proportional to how
-    # close it is to the backdrop.
+    # Despill: remove the key-color projection from partial-alpha pixels.
+    #
+    # Aggressive formulation: for any pixel with alpha < 255 we subtract
+    # the FULL projection onto the key-color unit vector (not scaled by
+    # ``1 - alpha/255`` as in the legacy formula).  This eliminates the
+    # residual pink/magenta tint that the old formula left on soft edges
+    # because partial-alpha pixels near the key color still retained a
+    # proportional share of the key hue.
+    #
+    # Fully-opaque pixels (alpha == 255) are untouched because they are
+    # pure subject pixels that happen to be far from the key color.
     despill_applied = False
     out_rgb = rgb_f
     if despill:
-        partial = (alpha_f > 0.0) & (alpha_f < 255.0)
+        partial = alpha_f < 255.0
         if np.any(partial):
             despill_applied = True
             key_norm_sq = float(np.sum(key_arr * key_arr))
             if key_norm_sq > 0.0:
-                # Dot product of each pixel with the key vector. Shape: (H, W).
-                dot = np.sum(rgb_f * key_arr, axis=2)
-                # Projection magnitudes (scalar coefficient per pixel).
+                # Scalar projection coefficient of each pixel onto key vector.
+                dot = np.sum(rgb_f * key_arr, axis=2)  # (H, W)
                 coef = dot / key_norm_sq  # (H, W)
-                # Strength of the despill effect: 0 for opaque, 1 for fully keyed.
-                strength = (1.0 - alpha_f / 255.0)
-                # Only touch partial-alpha pixels.
-                strength = np.where(partial, strength, 0.0)
-                # Subtract: out = rgb - (coef * strength)[..., None] * key
-                subtract = (coef * strength)[..., None] * key_arr
+                # Only apply to non-fully-opaque pixels.
+                coef_masked = np.where(partial, coef, 0.0)
+                # Subtract the full projection: out = rgb - coef * key
+                subtract = coef_masked[..., None] * key_arr
                 out_rgb = rgb_f - subtract
 
-    # Feather: Gaussian-blur the alpha channel ONLY. We do this on the
-    # final uint8 alpha via Pillow because its GaussianBlur matches what
-    # callers expect from PIL.ImageFilter.
+    # Alpha erosion: apply a min-filter to the alpha channel BEFORE feathering.
+    # This bites into the fringe so the subsequent Gaussian feather does not
+    # reintroduce the keyed-out color.  Each pass of a 3x3 min-filter erodes
+    # by 1 pixel.  edge_erode_px=0 skips this step entirely (back-compat).
     out_rgb_u8 = np.clip(out_rgb, 0.0, 255.0).astype(np.uint8)
     alpha_u8 = np.clip(alpha_f, 0.0, 255.0).astype(np.uint8)
 
     rgb_pil = Image.fromarray(out_rgb_u8, mode="RGB")
     alpha_pil = Image.fromarray(alpha_u8, mode="L")
+
+    if edge_erode_px > 0:
+        # MinFilter(size=3) is a 3x3 minimum = 1-pixel erosion per pass.
+        for _ in range(edge_erode_px):
+            alpha_pil = alpha_pil.filter(ImageFilter.MinFilter(size=3))
+
+    # Feather: Gaussian-blur the alpha channel ONLY. We do this on the
+    # final uint8 alpha via Pillow because its GaussianBlur matches what
+    # callers expect from PIL.ImageFilter.
     if feather_px > 0:
         alpha_pil = alpha_pil.filter(ImageFilter.GaussianBlur(radius=feather_px))
 
@@ -531,6 +566,7 @@ def _compute_rgba_pillow(
     tolerance: int,
     despill: bool,
     feather_px: int,
+    edge_erode_px: int = 0,
     Image,  # type: ignore[no-untyped-def]
     ImageFilter,  # type: ignore[no-untyped-def]
 ) -> tuple[PILImage, bool]:
@@ -575,18 +611,17 @@ def _compute_rgba_pillow(
                 elif alpha > 255:
                     alpha = 255
 
-            # Despill — only touch partial-alpha pixels.
-            if despill and 0 < alpha < 255 and key_norm_sq > 0.0:
+            # Aggressive despill: subtract the FULL key-color projection from
+            # any pixel that is not fully opaque (alpha < 255).  This is more
+            # aggressive than the legacy formula (which scaled by 1-alpha/255)
+            # and eliminates the residual pink tint on soft subject edges.
+            if despill and alpha < 255 and key_norm_sq > 0.0:
                 despill_applied = True
-                strength = 1.0 - (alpha / 255.0)
                 # Scalar projection coefficient of (r,g,b) onto (kr,kg,kb).
                 coef = (r * kr + g * kg + b * kb) / key_norm_sq
-                sub_r = coef * strength * kr
-                sub_g = coef * strength * kg
-                sub_b = coef * strength * kb
-                r = int(max(0.0, min(255.0, r - sub_r)))
-                g = int(max(0.0, min(255.0, g - sub_g)))
-                b = int(max(0.0, min(255.0, b - sub_b)))
+                r = int(max(0.0, min(255.0, r - coef * kr)))
+                g = int(max(0.0, min(255.0, g - coef * kg)))
+                b = int(max(0.0, min(255.0, b - coef * kb)))
 
             idx = row_offset + x
             out_r[idx] = r
@@ -598,6 +633,11 @@ def _compute_rgba_pillow(
     g_band = Image.frombytes("L", (width, height), bytes(out_g))
     b_band = Image.frombytes("L", (width, height), bytes(out_b))
     a_band = Image.frombytes("L", (width, height), bytes(out_a))
+
+    # Alpha erosion: bite into the fringe before feathering.
+    if edge_erode_px > 0:
+        for _ in range(edge_erode_px):
+            a_band = a_band.filter(ImageFilter.MinFilter(size=3))
 
     if feather_px > 0:
         a_band = a_band.filter(ImageFilter.GaussianBlur(radius=feather_px))

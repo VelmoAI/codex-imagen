@@ -140,14 +140,16 @@ def test_keyout_returns_chroma_result_with_correct_stats(tmp_path: Path) -> None
     # 100x100 = 10_000 pixels. Half magenta, half red.
     _make_half_image(src, left=(255, 0, 255), right=(255, 0, 0))
 
-    result = keyout(src, dst, feather_px=0)
+    # Use edge_erode_px=0 to get exact pixel counts: erosion would expand
+    # the fully-keyed region by the boundary pixels it bites into.
+    result = keyout(src, dst, feather_px=0, edge_erode_px=0)
 
     assert isinstance(result, ChromaResult)
     assert result.src_path == src
     assert result.dst_path == dst
     assert result.key_rgb == DEFAULT_KEY_RGB
     assert result.pixels_total == 10_000
-    # No feather + cleanly separated colors -> binary alpha.
+    # No feather + no erosion + cleanly separated colors -> binary alpha.
     assert result.pixels_keyed_partial == 0
     assert result.pixels_keyed_fully == 5_000
     assert result.pixels_kept == 5_000
@@ -344,3 +346,148 @@ def test_pillow_missing_raises_importerror(
     src.write_bytes(b"")  # ensure existence check passes
     with pytest.raises(ImportError, match="Pillow"):
         keyout(src, dst)
+
+
+# ---------------------------------------------------------------------------
+# Fix 2: Chroma pink fringe elimination tests
+# ---------------------------------------------------------------------------
+
+
+def _make_antialiased_blob_on_magenta(
+    path: Path,
+    size: int = 80,
+) -> None:
+    """Create a synthetic image: solid magenta background with a white circle
+    that has anti-aliased soft edges blending toward magenta.
+
+    The anti-alias is simulated by drawing a ring of pinkish pixels between
+    the full-magenta background and the white circle center.
+    """
+    img = Image.new("RGB", (size, size), (255, 0, 255))
+    pixels = img.load()
+    cx = cy = size // 2
+    r_inner = size // 4
+    r_outer = r_inner + 6  # 6-pixel soft ring
+    for y in range(size):
+        for x in range(size):
+            dist = ((x - cx) ** 2 + (y - cy) ** 2) ** 0.5
+            if dist <= r_inner:
+                pixels[x, y] = (255, 255, 255)  # solid white subject
+            elif dist <= r_outer:
+                # Anti-aliased fringe: blend white toward magenta
+                t = (dist - r_inner) / (r_outer - r_inner)
+                r = int(255)
+                g = int(255 * (1 - t))
+                b = int(255)
+                pixels[x, y] = (r, g, b)
+            # else: stays magenta
+    img.save(path, "PNG")
+
+
+def test_no_pink_fringe_after_keyout(tmp_path: Path) -> None:
+    """Synthetic image with magenta + soft anti-aliased blob.
+
+    After keyout, no pixel in the result should have the 'pink halo'
+    signature (R > 200 AND B > 200 AND G < 100) with non-zero alpha.
+    Such pixels are the residual magenta tint that despill+erosion must remove.
+    """
+    src = tmp_path / "blob.png"
+    dst = tmp_path / "blob_keyed.png"
+    _make_antialiased_blob_on_magenta(src)
+
+    keyout(src, dst, despill=True, feather_px=0, edge_erode_px=1)
+
+    result_img = Image.open(dst).convert("RGBA")
+    r_band, g_band, b_band, a_band = result_img.split()
+
+    pink_fringe_count = 0
+    for r, g, b, a in zip(
+        r_band.getdata(), g_band.getdata(), b_band.getdata(), a_band.getdata()
+    ):
+        # A "pink halo" pixel: magenta-ish RGB AND still visible (alpha > 0).
+        if r > 200 and b > 200 and g < 100 and a > 0:
+            pink_fringe_count += 1
+
+    assert pink_fringe_count == 0, (
+        f"Found {pink_fringe_count} pink fringe pixel(s) with non-zero alpha "
+        "after keyout with despill+erosion"
+    )
+
+
+def test_edge_erode_px_zero_disables_erosion(tmp_path: Path) -> None:
+    """edge_erode_px=0 must be accepted without error and disable erosion.
+
+    We verify back-compat by checking that a keyout with erosion=0 does not
+    crash and that the result is a valid RGBA image.
+    """
+    src = tmp_path / "src.png"
+    dst = tmp_path / "dst.png"
+    _make_half_image(src, left=(255, 0, 255), right=(255, 0, 0))
+
+    result = keyout(src, dst, feather_px=0, edge_erode_px=0)
+
+    assert isinstance(result, ChromaResult)
+    out = Image.open(dst)
+    assert out.mode == "RGBA"
+    # With no erosion the boundary should be at the exact half-way point.
+    alpha = out.split()[-1]
+    assert alpha.getpixel((10, 50)) == 0    # magenta half: fully keyed
+    assert alpha.getpixel((90, 50)) == 255  # red half: fully opaque
+
+
+def test_edge_erode_px_two_erodes_more_aggressively(tmp_path: Path) -> None:
+    """edge_erode_px=2 should key out more fringe pixels than edge_erode_px=1.
+
+    We measure this by counting fully-keyed pixels: more erosion = more keyed.
+    """
+    src = tmp_path / "src.png"
+    dst1 = tmp_path / "erode1.png"
+    dst2 = tmp_path / "erode2.png"
+    # Half-and-half image so there is a clear erode-able boundary.
+    _make_half_image(src, left=(255, 0, 255), right=(255, 0, 0), size=(200, 200))
+
+    from codex_imagen._chroma import _pixel_stats
+
+    keyout(src, dst1, feather_px=0, edge_erode_px=1)
+    keyout(src, dst2, feather_px=0, edge_erode_px=2)
+
+    _, keyed1, _, _ = _pixel_stats(Image.open(dst1).convert("RGBA"))
+    _, keyed2, _, _ = _pixel_stats(Image.open(dst2).convert("RGBA"))
+
+    # More erosion must key out at least as many pixels.
+    assert keyed2 >= keyed1, (
+        f"edge_erode_px=2 should key at least as many pixels as =1: "
+        f"{keyed2} vs {keyed1}"
+    )
+
+
+def test_edge_erode_px_invalid_raises(tmp_path: Path) -> None:
+    """Negative edge_erode_px must raise ValueError."""
+    src = tmp_path / "src.png"
+    dst = tmp_path / "dst.png"
+    _make_solid_image(src, (255, 0, 0))
+    with pytest.raises(ValueError, match="edge_erode_px"):
+        keyout(src, dst, edge_erode_px=-1)
+
+
+def test_existing_chroma_tests_still_pass_with_default_erosion(tmp_path: Path) -> None:
+    """Smoke-test that the basic half-image keyout still works with erosion=1.
+
+    Confirms the default behavior (edge_erode_px=1) doesn't break the core
+    magenta-to-transparent pipeline — just slightly expands the keyed region.
+    """
+    src = tmp_path / "src.png"
+    dst = tmp_path / "dst.png"
+    _make_half_image(src, left=(255, 0, 255), right=(255, 0, 0))
+
+    result = keyout(src, dst, feather_px=0)  # default edge_erode_px=1
+
+    assert isinstance(result, ChromaResult)
+    out = Image.open(dst).convert("RGBA")
+    alpha = out.split()[-1]
+    # The magenta-side center should be fully transparent.
+    assert alpha.getpixel((10, 50)) == 0
+    # The red-side center should be fully opaque (far from the eroded boundary).
+    assert alpha.getpixel((90, 50)) == 255
+    # Total pixel count unchanged.
+    assert result.pixels_total == 10_000
