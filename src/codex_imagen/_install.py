@@ -30,6 +30,7 @@ import json
 import os
 import platform
 import re
+import shutil
 import sys
 import tomllib
 from dataclasses import dataclass
@@ -65,7 +66,48 @@ class ClientStatus:
 # ---------------------------------------------------------------------------
 
 _MCP_SERVER_KEY = "codex-imagen"
-_MCP_SERVER_COMMAND = "codex-imagen-mcp"
+_MCP_SERVER_COMMAND_DIRECT = "codex-imagen-mcp"
+
+
+# ---------------------------------------------------------------------------
+# Command-resolution helper
+# ---------------------------------------------------------------------------
+
+def _find_command(cmd: str) -> str | None:
+    """Return the full path to ``cmd`` if it is on PATH, else ``None``.
+
+    Uses :func:`shutil.which` so it respects PATH, file-extension rules on
+    Windows, and executable permissions on POSIX.  Tests can monkeypatch
+    :func:`shutil.which` to control the result.
+    """
+    return shutil.which(cmd)
+
+
+def _mcp_server_entry() -> dict[str, object]:
+    """Return the best MCP server config dict for this environment.
+
+    Priority:
+    1. ``uvx`` on PATH  → ``{"command": "uvx", "args": ["codex-imagen-mcp"]}``
+    2. ``codex-imagen-mcp`` on PATH → ``{"command": "codex-imagen-mcp", "args": []}``
+    3. neither found    → uvx form with a best-effort warning printed to stderr
+
+    The uvx form is preferred because it works for both ``uvx``-installed and
+    pip-installed packages (uvx re-uses the already-cached environment), and it
+    does not require ``codex-imagen-mcp`` to be on PATH in a pip-installed
+    setup that lacks the scripts directory in PATH.
+    """
+    if _find_command("uvx") is not None:
+        return {"command": "uvx", "args": [_MCP_SERVER_COMMAND_DIRECT]}
+    if _find_command(_MCP_SERVER_COMMAND_DIRECT) is not None:
+        return {"command": _MCP_SERVER_COMMAND_DIRECT, "args": []}
+    # Neither found — emit a warning and default to uvx (the modern path).
+    print(
+        "Warning: neither 'uvx' nor 'codex-imagen-mcp' was found on PATH. "
+        "The MCP config will use 'uvx codex-imagen-mcp'; install uv "
+        "(https://github.com/astral-sh/uv) to ensure it works.",
+        file=sys.stderr,
+    )
+    return {"command": "uvx", "args": [_MCP_SERVER_COMMAND_DIRECT]}
 
 _AGENTS_BLOCK_BEGIN = "<!-- BEGIN codex-imagen-preference -->"
 _AGENTS_BLOCK_END = "<!-- END codex-imagen-preference -->"
@@ -166,7 +208,7 @@ def _inject_mcp_json(data: dict[str, Any]) -> dict[str, Any]:
     """Return a copy of ``data`` with the codex-imagen MCP entry merged in."""
     result = dict(data)
     servers: dict[str, Any] = dict(result.get("mcpServers") or {})
-    servers[_MCP_SERVER_KEY] = {"command": _MCP_SERVER_COMMAND}
+    servers[_MCP_SERVER_KEY] = _mcp_server_entry()
     result["mcpServers"] = servers
     return result
 
@@ -219,7 +261,7 @@ def _inject_mcp_toml(data: dict[str, Any]) -> dict[str, Any]:
     """Return a copy of ``data`` with the codex-imagen MCP entry merged in."""
     result = dict(data)
     servers: dict[str, Any] = dict(result.get("mcp_servers") or {})
-    servers[_MCP_SERVER_KEY] = {"command": _MCP_SERVER_COMMAND}
+    servers[_MCP_SERVER_KEY] = _mcp_server_entry()
     result["mcp_servers"] = servers
     return result
 

@@ -19,9 +19,20 @@ ChatGPT subscribers already have image-generation quota that the Codex CLI uses 
 
 ## Quick install
 
+**Recommended — one-liner (no Python/venv knowledge needed):**
+
 ```bash
-pip install codex-imagen        # from PyPI
-imagen setup                    # interactive: pick which clients to register the MCP in
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/VelmoAI/codex-imagen/main/install.sh | sh
+
+# Windows (PowerShell)
+iwr https://raw.githubusercontent.com/VelmoAI/codex-imagen/main/install.ps1 | iex
+```
+
+**Already have [uv](https://github.com/astral-sh/uv)?**
+
+```bash
+uvx codex-imagen setup
 ```
 
 `imagen setup` detects and installs the `codex-imagen` MCP server for any of:
@@ -57,20 +68,36 @@ it is always in sync with the installed version. `imagen uninstall` removes it;
 
 ## Install
 
-From PyPI:
+**Recommended — one-liner:**
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/VelmoAI/codex-imagen/main/install.sh | sh
+
+# Windows (PowerShell)
+iwr https://raw.githubusercontent.com/VelmoAI/codex-imagen/main/install.ps1 | iex
+```
+
+This installs [uv](https://github.com/astral-sh/uv) if needed and runs `codex-imagen setup` to register the MCP server and the bundled skill in your AI clients.
+
+**Already have uv?**
+
+```bash
+uvx codex-imagen setup
+```
+
+**Plain pip (advanced):**
+
 ```bash
 pip install codex-imagen
+imagen setup
 ```
 
-From GitHub (latest main, works before the first PyPI release):
+**From GitHub (latest main, no PyPI needed):**
+
 ```bash
 pip install git+https://github.com/VelmoAI/codex-imagen.git
-```
-
-Then run:
-```bash
-imagen setup    # installs MCP server + bundled skill into your AI clients
-imagen --help
+imagen setup
 ```
 
 **Prerequisite:** a working Codex OAuth login at `~/.codex/auth.json`. If you have never logged in, run the Codex CLI's login flow once — `codex-imagen` only ever reads that file, it never writes it.
@@ -108,7 +135,8 @@ imagen "a ceramic coffee mug, minimal hero shot"
 {
   "mcpServers": {
     "codex-imagen": {
-      "command": "codex-imagen-mcp"
+      "command": "uvx",
+      "args": ["codex-imagen-mcp"]
     }
   }
 }
@@ -277,7 +305,8 @@ A single tool — `imagen` — is exposed over stdio. Its JSON schema mirrors `I
 {
   "mcpServers": {
     "codex-imagen": {
-      "command": "codex-imagen-mcp"
+      "command": "uvx",
+      "args": ["codex-imagen-mcp"]
     }
   }
 }

@@ -9,11 +9,16 @@ config files are touched.
 We monkeypatch ``codex_imagen._install._home`` (and ``os.environ`` where
 needed) to return ``tmp_path``, which gives us a fully isolated
 filesystem sandbox per test.
+
+Most install tests also monkeypatch ``shutil.which`` so that the expected
+MCP config shape is deterministic regardless of what tools are actually
+installed on the machine running the tests.
 """
 
 from __future__ import annotations
 
 import json
+import shutil
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -23,6 +28,7 @@ import pytest
 import codex_imagen._install as _install_mod
 from codex_imagen._install import (
     ClientStatus,
+    _find_command,
     detect_clients,
     install_for_client,
     remove_codex_preference_snippet,
@@ -42,6 +48,30 @@ def _patch_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # Also redirect APPDATA / XDG_CONFIG_HOME so platform helpers pick up tmp.
     monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
+
+
+def _patch_uvx_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make shutil.which return a fake uvx path, simulating uv installed."""
+    _orig = shutil.which
+
+    def _which(name: str) -> str | None:
+        if name == "uvx":
+            return "/usr/local/bin/uvx"
+        return _orig(name)
+
+    monkeypatch.setattr(shutil, "which", _which)
+
+
+def _patch_no_uvx(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make shutil.which report uvx absent but codex-imagen-mcp present."""
+    def _which(name: str) -> str | None:
+        if name == "uvx":
+            return None
+        if name == "codex-imagen-mcp":
+            return "/usr/local/bin/codex-imagen-mcp"
+        return None
+
+    monkeypatch.setattr(shutil, "which", _which)
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -98,7 +128,8 @@ def test_detect_clients_claude_code_installed(
 ) -> None:
     """Claude Code shows installed=True when the MCP entry already exists."""
     _patch_home(monkeypatch, tmp_path)
-    config = {"mcpServers": {"codex-imagen": {"command": "codex-imagen-mcp"}}}
+    # The entry shape doesn't matter for detection — only the key presence does.
+    config = {"mcpServers": {"codex-imagen": {"command": "uvx", "args": ["codex-imagen-mcp"]}}}
     (tmp_path / ".claude.json").write_text(json.dumps(config), encoding="utf-8")
     result = {s.key: s for s in detect_clients()}
     assert result["claude-code"].installed is True
@@ -137,6 +168,7 @@ def test_install_creates_missing_claude_code_config(
 ) -> None:
     """install_for_client('claude-code') creates ~/.claude.json if absent."""
     _patch_home(monkeypatch, tmp_path)
+    _patch_uvx_available(monkeypatch)
     # Make the client 'detected' by creating the file.
     config_path = tmp_path / ".claude.json"
     config_path.write_text("{}", encoding="utf-8")
@@ -144,7 +176,10 @@ def test_install_creates_missing_claude_code_config(
     ok, msg = install_for_client("claude-code")
     assert ok is True
     data = _read_json(config_path)
-    assert data["mcpServers"]["codex-imagen"]["command"] == "codex-imagen-mcp"
+    # With uvx available, the preferred form uses uvx as the command.
+    entry = data["mcpServers"]["codex-imagen"]
+    assert entry["command"] == "uvx"
+    assert entry["args"] == ["codex-imagen-mcp"]
 
 
 def test_install_merges_existing_servers(
@@ -188,6 +223,7 @@ def test_install_cursor_creates_mcp_json(
 ) -> None:
     """install_for_client('cursor') creates ~/.cursor/mcp.json."""
     _patch_home(monkeypatch, tmp_path)
+    _patch_uvx_available(monkeypatch)
     cursor_dir = tmp_path / ".cursor"
     cursor_dir.mkdir()
 
@@ -196,7 +232,9 @@ def test_install_cursor_creates_mcp_json(
     config_path = cursor_dir / "mcp.json"
     assert config_path.exists()
     data = _read_json(config_path)
-    assert data["mcpServers"]["codex-imagen"]["command"] == "codex-imagen-mcp"
+    entry = data["mcpServers"]["codex-imagen"]
+    assert entry["command"] == "uvx"
+    assert entry["args"] == ["codex-imagen-mcp"]
 
 
 def test_install_unknown_client_returns_false(
@@ -233,7 +271,7 @@ def test_uninstall_removes_mcp_entry(
     _patch_home(monkeypatch, tmp_path)
     config = {
         "mcpServers": {
-            "codex-imagen": {"command": "codex-imagen-mcp"},
+            "codex-imagen": {"command": "uvx", "args": ["codex-imagen-mcp"]},
             "other-server": {"command": "other-mcp"},
         }
     }
@@ -281,6 +319,7 @@ def test_install_codex_creates_toml(
 ) -> None:
     """install_for_client('codex') creates ~/.codex/config.toml."""
     _patch_home(monkeypatch, tmp_path)
+    _patch_uvx_available(monkeypatch)
     codex_dir = tmp_path / ".codex"
     codex_dir.mkdir()
 
@@ -289,7 +328,9 @@ def test_install_codex_creates_toml(
     config_path = codex_dir / "config.toml"
     assert config_path.exists()
     data = _read_toml(config_path)
-    assert data["mcp_servers"]["codex-imagen"]["command"] == "codex-imagen-mcp"
+    entry = data["mcp_servers"]["codex-imagen"]
+    assert entry["command"] == "uvx"
+    assert entry["args"] == ["codex-imagen-mcp"]
 
 
 def test_install_codex_preserves_other_toml_tables(
@@ -471,7 +512,8 @@ def test_dry_run_uninstall_makes_no_changes(
 ) -> None:
     """uninstall_for_client dry_run=True makes zero filesystem changes."""
     _patch_home(monkeypatch, tmp_path)
-    config = {"mcpServers": {"codex-imagen": {"command": "codex-imagen-mcp"}}}
+    # Use the modern uvx-form so _is_mcp_installed_json returns True.
+    config = {"mcpServers": {"codex-imagen": {"command": "uvx", "args": ["codex-imagen-mcp"]}}}
     config_path = tmp_path / ".claude.json"
     config_path.write_text(json.dumps(config), encoding="utf-8")
     mtime_before = config_path.stat().st_mtime
@@ -499,3 +541,58 @@ def test_dry_run_agents_snippet_makes_no_changes(
     assert ok is True
     assert "dry-run" in msg
     assert not agents_path.exists()
+
+
+# ---------------------------------------------------------------------------
+# 7. _find_command and _mcp_server_entry — new uvx-first logic
+# ---------------------------------------------------------------------------
+
+
+def test_find_command_returns_path_when_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_find_command returns the resolved path when the command is on PATH."""
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/local/bin/uvx" if name == "uvx" else None)
+    result = _find_command("uvx")
+    assert result == "/usr/local/bin/uvx"
+
+
+def test_find_command_returns_none_when_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_find_command returns None when the command is not on PATH."""
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    result = _find_command("uvx")
+    assert result is None
+
+
+def test_mcp_entry_uses_uvx_when_available(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """When uvx is on PATH, install writes command=uvx, args=[codex-imagen-mcp]."""
+    _patch_home(monkeypatch, tmp_path)
+    _patch_uvx_available(monkeypatch)
+    config_path = tmp_path / ".claude.json"
+    config_path.write_text("{}", encoding="utf-8")
+
+    ok, _ = install_for_client("claude-code")
+    assert ok is True
+    data = _read_json(config_path)
+    entry = data["mcpServers"]["codex-imagen"]
+    assert entry == {"command": "uvx", "args": ["codex-imagen-mcp"]}
+
+
+def test_mcp_entry_falls_back_to_direct_command_when_no_uvx(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """When uvx is absent but codex-imagen-mcp is on PATH, use the direct form."""
+    _patch_home(monkeypatch, tmp_path)
+    _patch_no_uvx(monkeypatch)
+    config_path = tmp_path / ".claude.json"
+    config_path.write_text("{}", encoding="utf-8")
+
+    ok, _ = install_for_client("claude-code")
+    assert ok is True
+    data = _read_json(config_path)
+    entry = data["mcpServers"]["codex-imagen"]
+    assert entry == {"command": "codex-imagen-mcp", "args": []}
