@@ -767,8 +767,12 @@ class _CallContext:
     chroma_key_hex: str
     chroma_tolerance: int
     chroma_despill: bool
+    chroma_despill_mode: str
     chroma_feather_px: int
     chroma_edge_erode_px: int
+    chroma_auto_key: str | None
+    chroma_transparent_threshold: float
+    chroma_opaque_threshold: float
     skills_body: str
     mode_param: str
     extra_instructions: str | None
@@ -776,6 +780,7 @@ class _CallContext:
     advanced: dict[str, Any]
     output_format: str
     wall_clock_timeout: float
+    complex_subject_warning: str | None = None
 
 
 def _merge_extra_instructions(
@@ -934,7 +939,7 @@ def _run_one_call(ctx: _CallContext) -> dict[str, Any]:
                 if hex_fallback:
                     warnings.append(
                         f"chroma_key_hex {ctx.chroma_key_hex!r} is "
-                        f"malformed; falling back to magenta (#FF00FF)"
+                        f"malformed; falling back to green (#00FF00)"
                     )
                 ctx.chroma_keyout(
                     raw_path,
@@ -942,8 +947,12 @@ def _run_one_call(ctx: _CallContext) -> dict[str, Any]:
                     key_rgb=key_rgb,
                     tolerance=ctx.chroma_tolerance,
                     despill=ctx.chroma_despill,
+                    despill_mode=ctx.chroma_despill_mode,
                     feather_px=ctx.chroma_feather_px,
                     edge_erode_px=ctx.chroma_edge_erode_px,
+                    auto_key=ctx.chroma_auto_key,
+                    transparent_threshold=ctx.chroma_transparent_threshold,
+                    opaque_threshold=ctx.chroma_opaque_threshold,
                 )
             except Exception as exc:  # noqa: BLE001
                 return _error_result(
@@ -956,7 +965,13 @@ def _run_one_call(ctx: _CallContext) -> dict[str, Any]:
                     references_used=references_list,
                 )
 
-    # 5) Compose the result dict. Use the bridge's reported size when
+    # 5) Complex-subject warning: if the original prompt contains keywords
+    # indicative of complex edges (fur/hair/glass/etc), flag it now so
+    # the user knows chroma-key fringe may appear.
+    if effective_transparent and ctx.complex_subject_warning:
+        warnings.append(ctx.complex_subject_warning)
+
+    # 6) Compose the result dict. Use the bridge's reported size when
     # available, otherwise stat the final file.
     try:
         final_bytes = final_path.stat().st_size
@@ -985,17 +1000,43 @@ def _run_one_call(ctx: _CallContext) -> dict[str, Any]:
     }
 
 
+_COMPLEX_SUBJECT_KEYWORDS = frozenset({
+    "fur", "hair", "feather", "feathers", "smoke", "glass", "liquid",
+    "translucent", "reflective", "crystal", "mist", "steam", "transparent",
+})
+
+_COMPLEX_SUBJECT_WARNING_MSG = (
+    "subject likely contains complex edges (fur/hair/glass/etc) — "
+    "chroma-key fringe may be visible at semi-transparent edges. For "
+    "perfect alpha, consider a model with native transparency support."
+)
+
+
+def _check_complex_subject(prompt: str) -> str | None:
+    """Return a warning string if prompt contains complex-edge subject keywords.
+
+    Matches whole words only (e.g. "hair" matches but "haiku" does not).
+    Returns None when no keywords are found.
+    """
+    import re
+    lower = prompt.lower()
+    for kw in _COMPLEX_SUBJECT_KEYWORDS:
+        if re.search(r'\b' + re.escape(kw) + r'\b', lower):
+            return _COMPLEX_SUBJECT_WARNING_MSG
+    return None
+
+
 def _hex_to_rgb(hex_color: str) -> tuple[tuple[int, int, int], bool]:
     """Parse ``#RRGGBB`` → ``((R, G, B), fallback_used)``. Tolerant of casing.
 
     Returns a tuple of (rgb, fallback_used). ``fallback_used`` is True when the
-    input could not be parsed and the magenta default ``(255, 0, 255)`` was
+    input could not be parsed and the green default ``(0, 255, 0)`` was
     substituted. Callers should surface this as a warning so a typo in
     ``chroma_key_hex`` doesn't silently key against the wrong color.
     """
     s = (hex_color or "").lstrip("#").strip()
     if len(s) != 6:
-        return (255, 0, 255), True
+        return (0, 255, 0), True
     try:
         return (
             int(s[0:2], 16),
@@ -1003,7 +1044,7 @@ def _hex_to_rgb(hex_color: str) -> tuple[tuple[int, int, int], bool]:
             int(s[4:6], 16),
         ), False
     except ValueError:
-        return (255, 0, 255), True
+        return (0, 255, 0), True
 
 
 def _error_result(
@@ -1053,17 +1094,22 @@ def execute_plan(
     prompt_build: Callable,
     chroma_keyout: Callable | None,
     transparent: bool = False,
-    chroma_key_hex: str = "#FF00FF",
+    chroma_key_hex: str = "#00FF00",
     chroma_tolerance: int = 40,
     chroma_despill: bool = True,
+    chroma_despill_mode: str = "dominance",
     chroma_feather_px: int = 2,
     chroma_edge_erode_px: int = 1,
+    chroma_auto_key: str | None = "border",
+    chroma_transparent_threshold: float = 12.0,
+    chroma_opaque_threshold: float = 220.0,
     skills_body: str = "",
     mode_param: str = "auto",
     extra_instructions: str | None = None,
     vars: dict[str, str] | None = None,
     advanced: dict[str, Any] | None = None,
     wall_clock_timeout: float = 240.0,
+    original_prompt_for_warnings: str = "",
 ) -> list[dict[str, Any]]:
     """Execute a :class:`ModePlan` and return per-call result dicts.
 
@@ -1090,7 +1136,12 @@ def execute_plan(
         transparent: Pass-through to the prompt builder AND triggers
             ``chroma_keyout`` post-process.
         chroma_key_hex / chroma_tolerance / chroma_despill /
-        chroma_feather_px: Chroma settings.
+        chroma_despill_mode / chroma_feather_px / chroma_edge_erode_px /
+        chroma_auto_key / chroma_transparent_threshold /
+        chroma_opaque_threshold: Chroma settings.
+        original_prompt_for_warnings: The original user prompt string, used
+            to detect complex subjects (fur/hair/glass/etc) and emit a
+            warning when fringe artifacts are likely.
         skills_body: Pre-loaded skill body (from :func:`_skills.load_skills`).
         mode_param: ``raw`` / ``medium`` / ``high`` / ``max`` / ``auto`` —
             forwarded to :func:`_prompts.build` as ``mode``.
@@ -1103,6 +1154,14 @@ def execute_plan(
         A list of result dicts, sorted by ``index``.
     """
     advanced = dict(advanced) if advanced else {}
+
+    # Complex-subject warning: detect fur/hair/glass/etc keywords in the
+    # original prompt and flag them up front so results carry the warning.
+    _complex_subject_warning: str | None = None
+    if transparent and original_prompt_for_warnings:
+        _complex_subject_warning = _check_complex_subject(
+            original_prompt_for_warnings
+        )
 
     # Ensure the output directory exists before any work starts. ModePlan
     # doesn't carry the directory directly, so derive it from the first
@@ -1121,8 +1180,12 @@ def execute_plan(
             chroma_key_hex=chroma_key_hex,
             chroma_tolerance=chroma_tolerance,
             chroma_despill=chroma_despill,
+            chroma_despill_mode=chroma_despill_mode,
             chroma_feather_px=chroma_feather_px,
             chroma_edge_erode_px=chroma_edge_erode_px,
+            chroma_auto_key=chroma_auto_key,
+            chroma_transparent_threshold=chroma_transparent_threshold,
+            chroma_opaque_threshold=chroma_opaque_threshold,
             skills_body=skills_body,
             mode_param=mode_param,
             extra_instructions=extra_instructions,
@@ -1130,6 +1193,7 @@ def execute_plan(
             advanced=advanced,
             output_format=_format_for_output(call.output_path),
             wall_clock_timeout=wall_clock_timeout,
+            complex_subject_warning=_complex_subject_warning,
         )
 
     mode = plan.mode

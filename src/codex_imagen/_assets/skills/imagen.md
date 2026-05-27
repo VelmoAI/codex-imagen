@@ -159,22 +159,34 @@ the image tool runs. This maps to the bridge's `reasoning_effort`.
 
 `transparent=True` activates the chroma-key pipeline:
 
-1. Bridge renders subject on solid magenta (`#FF00FF` by default)
-2. Pillow keys out the magenta to alpha, applies despill at subject edges
-3. Result: clean RGBA PNG with no color contamination on the subject body
+1. Bridge renders subject on solid green (`#00FF00` by default — industry standard)
+2. Auto-key border sampling detects the actual rendered key color (handles model drift)
+3. Pillow keys out the background to alpha using dual-threshold smoothstep matte
+4. Dominance-capping despill removes residual key-color tint at subject edges
+5. Result: clean RGBA PNG with no color contamination on the subject body
 
 ```python
 imagen(
     prompt="a red apple, isolated subject",
     transparent=True,
-    chroma_tolerance=40,   # 0-100; raise if edges look chewed
-    chroma_despill=True,   # neutralizes magenta fringe at hair/edges
+    # Green is the default and works for most subjects.
+    # Use chroma_key="#FF00FF" (magenta) only for green subjects.
+    chroma_despill=True,           # neutralizes green fringe at edges
+    chroma_despill_mode="dominance",  # physically correct cap-based despill (default)
+    chroma_auto_key="border",      # auto-detect actual border color (default)
+    chroma_transparent_threshold=12.0,  # dual-threshold: distance ≤ this → alpha=0
+    chroma_opaque_threshold=220.0,      # dual-threshold: distance ≥ this → alpha=255
 )
 ```
 
 The raw opaque render is preserved as `<name>.raw.png` for debugging.
 
 Good for: product cut-outs, logo isolation, asset extraction, overlays.
+
+**Complex subjects** (fur, hair, feathers, glass, smoke, liquids, translucent
+materials): a warning fires automatically when the prompt contains these keywords.
+Chroma-key may leave fringe at semi-transparent edges on these subjects — consider
+a model with native transparency support for perfect alpha.
 
 Do **not** combine `transparent=True` with `mode="raw"` — a warning fires and
 the pipeline still runs but prompt quality may be lower.
@@ -237,7 +249,7 @@ Common labeled-spec keys: `Subject`, `Style`, `Mood`, `Lighting`, `Composition`,
 | `count` | int | 1 | Number of variants (variants mode only) |
 | `skills` | list[str] | [] | Skill file paths |
 | `references` | list[str] | [] | Reference image paths |
-| `transparent` | bool | False | Enable chroma-key pipeline |
+| `transparent` | bool | False | Enable chroma-key pipeline (auto-warns on complex subjects) |
 | `parallel` | int | 2 | Max concurrent API calls |
 | `output_dir` | str \| Path | `"./out"` | Where images + manifest.jsonl land |
 | `size` | str | `"auto"` | `"WIDTHxHEIGHT"` — both axes multiples of 16, max 3840px |

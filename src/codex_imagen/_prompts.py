@@ -229,12 +229,20 @@ TOOL CALL DISCIPLINE:
 # Appended to ``instructions`` when the user requested transparent output.
 # We use chroma-key post-processing (Pillow) because the bridge rejects
 # ``background: "transparent"`` with HTTP 400. The model has to know to
-# render against a flat magenta background or the keyer can't do its job.
+# render against a flat key-color background or the keyer can't do its job.
+#
+# The template accepts a ``{key}`` placeholder (the actual hex color,
+# e.g. ``#00FF00``) and ``{key_lower}`` (the same value, used in
+# the "do not use" line for readability).  Both are identical strings;
+# ``key_lower`` is kept for template flexibility.
 CHROMA_BLOCK_TEMPLATE = (
-    "This output will be chroma-keyed post-process. Render the subject "
-    "isolated on a perfectly flat, untextured, solid {key} background. "
-    "No shadows, glow, gradients, or atmospheric effects on the "
-    "background. Subject edges must be clean."
+    "This output will be chroma-keyed post-process to remove the background. "
+    "Render the subject isolated on a perfectly flat, untextured, solid "
+    "{key} background. "
+    "The background must be exactly {key} with no shadows, no gradients, "
+    "no floor plane, no reflections, no texture, and no lighting variation. "
+    "Do not use {key} anywhere in the subject. "
+    "Subject edges must be clean and crisp with generous padding around the subject."
 )
 
 
@@ -530,7 +538,7 @@ def build(
     mode: str = "auto",
     skills_body: str = "",
     transparent: bool = False,
-    chroma_key_hex: str = "#FF00FF",
+    chroma_key_hex: str = "#00FF00",
     references: list[str] | None = None,
     extra_instructions: str | None = None,
     vars: dict[str, str] | None = None,
@@ -555,8 +563,9 @@ def build(
             instructions so the model renders against a flat key colour.
             Ignored in ``raw`` mode (with warning).
         chroma_key_hex: The hex colour to render against. Defaults to
-            magenta ``#FF00FF`` — matches the default chroma key in
-            :mod:`_chroma`.
+            green ``#00FF00`` — the industry-standard chroma-key color,
+            matches the default chroma key in :mod:`_chroma`. Use
+            ``#FF00FF`` (magenta) only when the subject is green.
         references: File paths / URLs of reference images, used to auto-
             generate the ``Input images:`` line on dict prompts that
             don't supply one explicitly.

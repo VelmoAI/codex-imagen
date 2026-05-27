@@ -225,9 +225,13 @@ TOOL_INPUT_SCHEMA: dict[str, Any] = {
             "default": False,
         },
         "chroma_key": {
-            "description": "Hex color used as the chroma-key backdrop.",
+            "description": (
+                "Hex color used as the chroma-key backdrop. Default #00FF00 "
+                "(green) works for most subjects. Use #FF00FF (magenta) only "
+                "for green subjects."
+            ),
             "type": "string",
-            "default": "#FF00FF",
+            "default": "#00FF00",
         },
         "chroma_tolerance": {
             "description": (
@@ -244,14 +248,52 @@ TOOL_INPUT_SCHEMA: dict[str, Any] = {
             "type": "boolean",
             "default": True,
         },
+        "chroma_despill_mode": {
+            "description": (
+                "Despill algorithm. 'dominance' (default): cap spill channels "
+                "to max(non-spill)-1 — physically correct, no over-despill. "
+                "'projection': legacy full key-vector projection subtraction."
+            ),
+            "type": "string",
+            "enum": ["dominance", "projection"],
+            "default": "dominance",
+        },
         "chroma_edge_erode_px": {
             "description": (
                 "Pixels to erode the alpha mask before feathering. Eliminates "
-                "pink fringe on soft subject edges. 0 disables; default 1."
+                "key-color fringe on soft subject edges. 0 disables; default 1."
             ),
             "type": "integer",
             "minimum": 0,
             "default": 1,
+        },
+        "chroma_auto_key": {
+            "description": (
+                "Sample actual background color from image border: 'border' "
+                "(default) or 'corners'. Handles model drift in key rendering. "
+                "Set to null to use chroma_key exactly as given."
+            ),
+            "type": ["string", "null"],
+            "enum": ["border", "corners", None],
+            "default": "border",
+        },
+        "chroma_transparent_threshold": {
+            "description": (
+                "Dual-threshold soft matte: pixels at or below this key-color "
+                "distance are fully transparent. Default 12."
+            ),
+            "type": "number",
+            "minimum": 0,
+            "default": 12.0,
+        },
+        "chroma_opaque_threshold": {
+            "description": (
+                "Dual-threshold soft matte: pixels at or above this key-color "
+                "distance are fully opaque. Default 220."
+            ),
+            "type": "number",
+            "minimum": 1,
+            "default": 220.0,
         },
         "enhance_prompt": {
             "description": (

@@ -249,15 +249,22 @@ def test_build_medium_includes_codex_labeled_spec_preamble() -> None:
 
 def test_build_transparent_appends_chroma_block() -> None:
     bp = build("a logo", transparent=True)
-    # Default key is magenta.
-    assert "#FF00FF" in bp.instructions
+    # Default key is now green (#00FF00).
+    assert "#00FF00" in bp.instructions
     assert "chroma-keyed" in bp.instructions
 
 
-def test_build_transparent_uses_custom_chroma_key() -> None:
-    bp = build("a logo", transparent=True, chroma_key_hex="#00FF00")
+def test_build_transparent_uses_custom_chroma_key_magenta() -> None:
+    bp = build("a logo", transparent=True, chroma_key_hex="#FF00FF")
+    assert "#FF00FF" in bp.instructions
+
+
+def test_build_transparent_default_key_is_green() -> None:
+    """Default chroma key must be #00FF00 (green), not magenta."""
+    bp = build("a logo", transparent=True)
     assert "#00FF00" in bp.instructions
-    assert "#FF00FF" not in bp.instructions
+    # The anti-prompt line should also reference the actual key.
+    assert "Do not use #00FF00" in bp.instructions
 
 
 def test_build_includes_batch_context_when_provided() -> None:

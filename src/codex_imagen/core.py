@@ -166,10 +166,14 @@ class ImagenOptions:
 
     # --- TRANSPARENCY ---
     transparent: bool = False
-    chroma_key: str = "#FF00FF"
+    chroma_key: str = "#00FF00"
     chroma_tolerance: int = 40
     chroma_despill: bool = True
+    chroma_despill_mode: str = "dominance"
     chroma_edge_erode_px: int = 1
+    chroma_auto_key: str | None = "border"
+    chroma_transparent_threshold: float = 12.0
+    chroma_opaque_threshold: float = 220.0
 
     # --- ENHANCEMENT ---
     enhance_prompt: bool = False
@@ -214,6 +218,22 @@ class ImagenOptions:
             raise ValueError(
                 f"chroma_edge_erode_px must be a non-negative int, "
                 f"got {self.chroma_edge_erode_px!r}"
+            )
+        if self.chroma_despill_mode not in ("dominance", "projection"):
+            raise ValueError(
+                f"chroma_despill_mode must be 'dominance' or 'projection', "
+                f"got {self.chroma_despill_mode!r}"
+            )
+        if self.chroma_auto_key not in ("border", "corners", None):
+            raise ValueError(
+                f"chroma_auto_key must be 'border', 'corners', or None, "
+                f"got {self.chroma_auto_key!r}"
+            )
+        if not (0.0 <= self.chroma_transparent_threshold < self.chroma_opaque_threshold <= 255.0):
+            raise ValueError(
+                f"chroma_transparent_threshold ({self.chroma_transparent_threshold}) "
+                f"must be < chroma_opaque_threshold ({self.chroma_opaque_threshold}) "
+                f"and both must be in [0, 255]"
             )
         if self.wall_clock_timeout <= 0:
             raise ValueError(
@@ -562,14 +582,19 @@ def _run(options: ImagenOptions) -> ImagenResult:
         chroma_key_hex=options.chroma_key,
         chroma_tolerance=options.chroma_tolerance,
         chroma_despill=options.chroma_despill,
+        chroma_despill_mode=options.chroma_despill_mode,
         chroma_feather_px=2,
         chroma_edge_erode_px=options.chroma_edge_erode_px,
+        chroma_auto_key=options.chroma_auto_key,
+        chroma_transparent_threshold=options.chroma_transparent_threshold,
+        chroma_opaque_threshold=options.chroma_opaque_threshold,
         skills_body=skills_body,
         mode_param=options.mode,
         extra_instructions=options.extra_instructions,
         vars=options.vars or None,
         advanced=advanced,
         wall_clock_timeout=options.wall_clock_timeout,
+        original_prompt_for_warnings=str(options.prompt) if isinstance(options.prompt, str) else "",
     )
 
     # ---- 9) Aggregate results & write manifest. -------------------------

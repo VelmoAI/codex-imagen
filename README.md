@@ -216,20 +216,26 @@ Auto-detection rules (`_prompts.resolve_auto_mode`):
 
 The Codex OAuth bridge silently rejects `background: "transparent"`. So instead of pretending we support it natively, `codex-imagen` runs a **chroma-key post-process** with Pillow:
 
-1. The bridge generates your subject on solid magenta (`#FF00FF` by default).
-2. `_chroma.keyout()` keys the magenta out into alpha, despills the chroma fringe at subject edges, and writes a clean RGBA PNG.
-3. The raw opaque image is preserved as `<name>.raw.png` for debugging.
+1. The bridge generates your subject on solid green (`#00FF00` by default — industry standard chroma key). Use `chroma_key="#FF00FF"` (magenta) only for green subjects.
+2. **Auto-key border sampling** detects the actual rendered key color from the image border, handling model drift where the model renders `#01FE00` instead of `#00FF00`.
+3. `_chroma.keyout()` keys the background out into alpha using a **dual-threshold smoothstep matte** (transparent below 12, opaque above 220, smooth ramp in between).
+4. **Dominance-capping despill** removes residual key-color tint at subject edges — physically correct, no over-despill.
+5. The raw opaque image is preserved as `<name>.raw.png` for debugging.
 
 ```python
 imagen(
     prompt="a single red apple, isolated",
     transparent=True,
-    chroma_tolerance=40,    # 0-100; raise if edges look chewed up
-    chroma_despill=True,    # neutralizes magenta fringe at hair/edges
+    chroma_despill=True,           # neutralizes green fringe at edges (default)
+    chroma_despill_mode="dominance",  # cap-based despill (default, most accurate)
+    chroma_auto_key="border",      # auto-detect actual background color (default)
+    # chroma_key="#FF00FF",        # use magenta only for green subjects
 )
 ```
 
-See [`examples/transparent_logo.md`](./examples/transparent_logo.md) for a full walk-through, including how to tune the tolerance when keying logos with fine detail.
+**Complex subjects** (fur, hair, feathers, glass, smoke, liquids): `codex-imagen` automatically warns when these keywords appear in the prompt, since chroma-key tends to leave fringe at semi-transparent edges on these subjects.
+
+See [`examples/transparent_logo.md`](./examples/transparent_logo.md) for a full walk-through, including how to tune the parameters when keying logos with fine detail.
 
 ---
 
