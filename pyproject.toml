@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "codex-imagen"
+version = "0.1.0"
+description = "Codex-OAuth image generation toolkit: SDK + CLI + MCP server"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "wauwa" },
+]
+dependencies = [
+    "codex-image-gen >= 0.2.1",
+    "Pillow >= 10.0",
+    "click >= 8.1",
+    "mcp >= 1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest >= 8",
+    "pytest-mock",
+]
+
+[project.scripts]
+imagen = "codex_imagen.cli:main"
+codex-imagen-mcp = "codex_imagen.mcp_server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/codex_imagen"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
