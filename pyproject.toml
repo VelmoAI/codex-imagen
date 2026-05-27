@@ -52,6 +52,7 @@ Issues = "https://github.com/VelmoAI/codex-imagen/issues"
 dev = [
     "pytest >= 8",
     "pytest-mock",
+    "pyyaml",
 ]
 
 [project.scripts]
