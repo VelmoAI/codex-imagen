@@ -12,6 +12,29 @@ license = { text = "MIT" }
 authors = [
     { name = "wauwa" },
 ]
+keywords = [
+    "image generation",
+    "codex",
+    "openai",
+    "mcp",
+    "ai",
+    "gpt-image",
+    "cli",
+    "sdk",
+]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Intended Audience :: Developers",
+    "Development Status :: 4 - Beta",
+]
 dependencies = [
     "codex-image-gen >= 0.2.1",
     "Pillow >= 10.0",
@@ -19,6 +42,11 @@ dependencies = [
     "mcp >= 1.0",
     "tomli-w >= 1.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/VelmoAI/codex-imagen"
+Repository = "https://github.com/VelmoAI/codex-imagen"
+Issues = "https://github.com/VelmoAI/codex-imagen/issues"
 
 [project.optional-dependencies]
 dev = [

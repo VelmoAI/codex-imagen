@@ -20,7 +20,7 @@ ChatGPT subscribers already have image-generation quota that the Codex CLI uses 
 ## Quick install
 
 ```bash
-pip install codex-imagen        # PyPI publish pending — for now: pip install -e . from clone
+pip install codex-imagen        # from PyPI
 imagen setup                    # interactive: pick which clients to register the MCP in
 ```
 
@@ -57,14 +57,20 @@ it is always in sync with the installed version. `imagen uninstall` removes it;
 
 ## Install
 
+From PyPI:
 ```bash
-# From PyPI (after publish)
 pip install codex-imagen
+```
 
-# From source
-git clone https://github.com/VelmoAI/codex-imagen
-cd codex-imagen
-pip install -e .
+From GitHub (latest main, works before the first PyPI release):
+```bash
+pip install git+https://github.com/VelmoAI/codex-imagen.git
+```
+
+Then run:
+```bash
+imagen setup    # installs MCP server + bundled skill into your AI clients
+imagen --help
 ```
 
 **Prerequisite:** a working Codex OAuth login at `~/.codex/auth.json`. If you have never logged in, run the Codex CLI's login flow once — `codex-imagen` only ever reads that file, it never writes it.
