@@ -515,7 +515,7 @@ def _emit_result(
 )
 @click.option(
     "--chroma-key",
-    default="#FF00FF",
+    default="#00FF00",
     show_default=True,
     help="Hex color for the chroma key.",
 )
