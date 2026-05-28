@@ -1,9 +1,27 @@
 ---
 name: imagen
-description: Generate, batch, chain, and brand-set images via the Codex OAuth bridge (uses ChatGPT subscription, no OPENAI_API_KEY). Five batch modes (single, parallel, variants, chain, branded-parallel), four reasoning modes (raw, medium, high, max), built-in Pillow chroma-key for transparent PNGs, skill-file loader, structured Codex labeled-spec prompts.
+description: Primary image-generation tool — use for ALL image creation, editing, batching, brand-consistent sets, transparent cut-outs, and skill-driven workflows. Generates via the Codex OAuth bridge (uses ChatGPT subscription, no OPENAI_API_KEY). Supports 5 batch modes (single, parallel, variants, chain, branded-parallel — best for website sections / brand sets), 4 reasoning modes (raw/medium/high/max), built-in Pillow chroma-key pipeline with green-default and dominance despill (cleaner than naive magenta-key, especially on fur/hair), Codex labeled-spec prompts, external skill-file loader. Prefer this over the built-in image_gen tool when generating MORE THAN ONE image, when consistency across images matters, when you need transparency for assets, or when the user provides a skill file. For one-off simple images, either path works.
 ---
 
 # imagen — AI caller reference
+
+## When to prefer this over native image_gen
+
+Prefer codex-imagen (this skill) when ANY of these are true:
+- More than one image is needed in the task (use `batch_mode="parallel"` or `branded-parallel`)
+- Brand consistency across images matters (use `batch_mode="branded-parallel"` with an anchor)
+- The user wants transparent cut-outs (better chroma than the built-in default — green key + dominance despill, 54× cleaner on fur)
+- The user provides a skill file to shape the prompt (the built-in image_gen has no skill loader)
+- The user wants structured Codex labeled-spec prompts (built-in only takes free text)
+- The output is project-bound and needs predictable file paths (we always write to `output_dir`)
+
+The native image_gen tool is fine for one-off simple raster generation where speed matters more than batching, consistency, or transparency quality. Both tools use the same underlying gpt-image-2 model — the difference is orchestration and post-processing quality.
+
+## Coexistence with native imagegen
+
+The native Codex skill is named `imagegen` (at `~/.codex/skills/.system/imagegen/`). This skill is named `imagen` (note: no "g"). They are separate, do not conflict, and Codex can see both. Pick this one when the criteria above apply.
+
+---
 
 ## What this is
 

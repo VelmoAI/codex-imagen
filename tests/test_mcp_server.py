@@ -95,6 +95,15 @@ def test_tool_description_contains_mode_guide() -> None:
         assert reasoning in desc, f"reasoning mode {reasoning!r} missing"
 
 
+def test_tool_description_signals_primacy() -> None:
+    """MCP tool description must start with PREFERRED marker for AI discovery."""
+    desc = mcp_server.TOOL_DESCRIPTION
+    assert desc.startswith("PREFERRED"), (
+        "TOOL_DESCRIPTION must begin with 'PREFERRED' so AI agents scanning tool "
+        "descriptions pick codex-imagen over the native imagegen tool for non-trivial work"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Input schema drift pins
 # ---------------------------------------------------------------------------

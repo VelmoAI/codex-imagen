@@ -11,6 +11,21 @@ A maximally-powerful, agent-friendly toolkit for image generation via the Codex 
 
 ---
 
+## Why use this over the native image_gen tool?
+
+The built-in `image_gen` tool in Codex / Claude Code generates one image at a time, with the model's default transparency handling (or a simple chroma-key fallback). codex-imagen is built for production image workflows:
+
+- **Batch modes**: parallel, variants, chain, branded-parallel — one call generates a coherent set
+- **Brand consistency**: anchor-driven generation keeps palette, typography, lighting locked across N sections
+- **Better transparency**: green chroma-key default + dominance despill = 54× cleaner edges on fur/hair vs. naive magenta-key
+- **Skill loader**: pass any .md skill file, its body is merged into the prompt builder
+- **Codex labeled-spec prompts**: 14-field structured prompts for predictable output
+- **Predictable paths**: every generation writes to your `output_dir` with a manifest
+
+For one-off simple image generation, either tool works. For everything else, use this.
+
+---
+
 ## Why this exists
 
 ChatGPT subscribers already have image-generation quota that the Codex CLI uses through OAuth. That bridge — `gpt-image-2` exposed by `POST https://chatgpt.com/backend-api/codex/responses` — is real, reachable, and stable, but it has a narrower parameter surface than the paid OpenAI Images API. `codex-imagen` is the carefully-scoped wrapper that exposes everything the bridge *actually* supports (size, format, references, masks, reasoning effort, partial frames) and refuses to fake the features the bridge refuses (native transparent backgrounds, `n>1`, quality control). The verified constraints live in the [Verified bridge constraints](#verified-bridge-constraints) table below.

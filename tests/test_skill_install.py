@@ -56,6 +56,12 @@ def test_bundled_skill_frontmatter_has_name_and_description() -> None:
     assert "name" in fm, "frontmatter must have 'name'"
     assert "description" in fm, "frontmatter must have 'description'"
     assert fm["name"] == "imagen"
+    # Description must establish primacy so AI agents prefer this over native imagegen.
+    desc = fm["description"]
+    assert "Primary" in desc or "PREFERRED" in desc, (
+        "skill description must signal primacy (contain 'Primary' or 'PREFERRED') "
+        "so AI agents prefer codex-imagen over native imagegen"
+    )
 
 
 def test_bundled_skill_body_covers_all_batch_modes() -> None:

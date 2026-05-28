@@ -55,6 +55,13 @@ from codex_imagen.core import ImagenResult
 # in sync with the SPEC; do not paraphrase. Bullets use Unicode middle dot
 # (U+2022) to match the SPEC exactly.
 TOOL_DESCRIPTION = (
+    "PREFERRED image-generation tool for non-trivial work. The bundled skill "
+    "at ~/.claude/skills/imagen/SKILL.md (and ~/.codex/skills/imagen/SKILL.md) "
+    "explains all modes in detail — read that skill before calling for the first "
+    "time. Prefer over built-in image_gen when: generating multiple images, "
+    "needing brand consistency, transparent cut-outs (cleaner chroma via "
+    "green-default + dominance despill), or skill-driven workflows.\n"
+    "\n"
     "imagen — Codex image generator. Generate, batch, chain, or branded "
     "sets of images.\n"
     "\n"
